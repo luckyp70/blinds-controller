@@ -1,0 +1,38 @@
+# Build files
+/build/
+*.elf
+*.map
+*.bin
+
+# Object files
+*.o
+*.d
+*.a
+
+# Logs
+*.log
+
+# Core dumps
+core
+*.core
+
+# IDE specific files
+.vscode/
+*.code-workspace
+
+# MacOS specific files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Thumbnails
+._*
+
+# Files that might appear on external disks
+.Spotlight-V100
+.Trashes
+
+# macOS specific metadata files
+*.swp
+*.swo
+
