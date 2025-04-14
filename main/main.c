@@ -54,11 +54,6 @@ void app_main(void)
 
     while (true)
     {
-        motor_up(MOTOR_1);
-        vTaskDelay(pdMS_TO_TICKS(2000));
-        motor_stop(MOTOR_1);
-
-        vTaskDelay(pdMS_TO_TICKS(3000));
-        ESP_LOGI(TAG, "Heartbeat 💓");
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
