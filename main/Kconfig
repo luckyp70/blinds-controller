@@ -34,6 +34,24 @@ menu "Blinds Controller Configuration"
     
         endmenu
 
+        config BLINDS_CONTROLLER_MOTOR_SAFETY_TIMEOUT
+            int "Motor Safety Timeout (ms)"
+            default 15000
+            range 1000 30000
+            help
+                Timeout in milliseconds after which the motor is forcibly stopped
+                for safety. This prevents the motor from running indefinitely.
+                IMPORTANT: This value should be greater than the normal travel time 
+                required to open or close the blinds.
+
+        config BLINDS_CONTROLLER_BLIND_FULL_TRAVEL_TIME_MS
+            int "Blind Full Travel Time (ms)"
+            default 11000
+            range 5000 20000
+            help
+                Time in milliseconds for blind to travel from fully closed to fully open.
+                IMPORTANT: This value should be lower than the motor safety timeout. 
+
         menu "Physical Buttons GPIO Configuration"
 
             config BLINDS_CONTROLLER_BUTTON_T1_DOWN

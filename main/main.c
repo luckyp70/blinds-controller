@@ -41,6 +41,7 @@
 #include "motors.h"
 #include "buttons.h"
 #include "zigbee.h"
+#include "blinds.h"
 
 static const char *TAG = "MAIN";
 
@@ -54,6 +55,7 @@ void app_main(void)
     motors_init();
     buttons_init();
     zigbee_init();
+    blinds_init();
 
     while (true)
     {

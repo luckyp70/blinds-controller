@@ -1,10 +1,14 @@
+/**
+ * @file motors.c
+ * @brief Implementation of motor control functionality for blinds controller
+ */
 #include "motors.h"
+#include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
 #include "esp_log.h"
 #include "driver/gpio.h"
 #include "soc/gpio_struct.h"
-#include "hal/gpio_types.h"
 
 static const char *TAG = "MOTORS";
 
@@ -13,9 +17,6 @@ static const char *TAG = "MOTORS";
 #define MOTOR_1_IN2 CONFIG_BLINDS_CONTROLLER_MOTOR_1_IN2
 #define MOTOR_2_IN1 CONFIG_BLINDS_CONTROLLER_MOTOR_2_IN1
 #define MOTOR_2_IN2 CONFIG_BLINDS_CONTROLLER_MOTOR_2_IN2
-
-/* Motor timeout */
-#define MOTOR_TIMEOUT_MS 15000
 
 typedef struct
 {
@@ -53,7 +54,7 @@ static void motor_start_timeout_timer(motor_id_t motor_id);
  *
  * @param motor_id The ID of the motor to stop the timer for.
  */
-static void motor_stop_timeout_timer(motor_id_t motor_id);
+static void motor_stop_safety_timeout_timer(motor_id_t motor_id);
 
 /**
  * @brief Initializes the motor driver pins and sets their initial state.
@@ -118,7 +119,7 @@ void motor_stop(motor_id_t motor_id)
     motors_set_direction(motor_id, false, false); // Set both IN1 and IN2 low
     motor_states[motor_id] = MOTOR_STOPPED;
 
-    motor_stop_timeout_timer(motor_id); // Stop the timeout timer
+    motor_stop_safety_timeout_timer(motor_id); // Stop the timeout timer
 }
 
 /**
@@ -215,6 +216,7 @@ static void motor_timeout_callback(TimerHandle_t xTimer)
 
 /**
  * @brief Starts or resets the timeout timer for the specified motor.
+ * It's a safety measure to ensure the motor stops after a timeout.
  *
  * @param motor_id The ID of the motor to start the timer for.
  */
@@ -223,7 +225,12 @@ static void motor_start_timeout_timer(motor_id_t motor_id)
     if (motor_timers[motor_id] == NULL)
     {
         // Create a new timer if it doesn't exist
-        motor_timers[motor_id] = xTimerCreate("MotorTimeout", pdMS_TO_TICKS(MOTOR_TIMEOUT_MS), pdFALSE, (void *)(uintptr_t)motor_id, motor_timeout_callback);
+        motor_timers[motor_id] = xTimerCreate(
+            "MotorTimeout",
+            pdMS_TO_TICKS(CONFIG_BLINDS_CONTROLLER_MOTOR_SAFETY_TIMEOUT),
+            pdFALSE,
+            (void *)(uintptr_t)motor_id,
+            motor_timeout_callback);
     }
 
     xTimerStop(motor_timers[motor_id], 0);  // Stop any active timer
@@ -232,10 +239,11 @@ static void motor_start_timeout_timer(motor_id_t motor_id)
 
 /**
  * @brief Stops the timeout timer for the specified motor.
+ * It's a safety measure to ensure the motor stops after a timeout.
  *
  * @param motor_id The ID of the motor to stop the timer for.
  */
-static void motor_stop_timeout_timer(motor_id_t motor_id)
+static void motor_stop_safety_timeout_timer(motor_id_t motor_id)
 {
     if (motor_timers[motor_id] != NULL)
     {
