@@ -36,3 +36,6 @@ core
 *.swp
 *.swo
 
+# Managed components
+managed_components/
+

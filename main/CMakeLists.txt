@@ -4,10 +4,14 @@ idf_component_register(
         "motors.c"
         "buttons.c"
         "zigbee.c"
+        "zcl_utility/src/zcl_utility.c"
 
     PRIV_REQUIRES 
-        "spi_flash"
+        "nvs_flash"
         "esp_driver_gpio"
-        
-    INCLUDE_DIRS "."
+
+    INCLUDE_DIRS 
+        "."
+        "zcl_utility/include"
 )
+

@@ -28,13 +28,14 @@
  */
 
 #include <stdio.h>
-#include <inttypes.h>
+// #include <inttypes.h>
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_chip_info.h"
-#include "esp_flash.h"
-#include "esp_system.h"
+// #include "freertos/task.h"
+// #include "esp_chip_info.h"
+// #include "esp_flash.h"
+// #include "esp_system.h"
+#include "nvs_flash.h"
 #include "esp_log.h"
 
 #include "motors.h"
@@ -46,6 +47,8 @@ static const char *TAG = "MAIN";
 void app_main(void)
 {
     ESP_LOGI(TAG, "Starting ESP32 Screen Controller...");
+
+    ESP_ERROR_CHECK(nvs_flash_init());
 
     // Initialize modules
     motors_init();
