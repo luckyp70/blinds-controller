@@ -1,4 +1,5 @@
 #include "buttons.h"
+#include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
 #include "esp_log.h"
@@ -7,10 +8,10 @@
 
 static const char *TAG = "BUTTONS";
 
-#define BUTTON_T1_DOWN GPIO_NUM_10
-#define BUTTON_T1_UP GPIO_NUM_11
-#define BUTTON_T2_DOWN GPIO_NUM_14
-#define BUTTON_T2_UP GPIO_NUM_15
+#define BUTTON_T1_DOWN CONFIG_BLINDS_CONTROLLER_BUTTON_T1_DOWN
+#define BUTTON_T1_UP CONFIG_BLINDS_CONTROLLER_BUTTON_T1_UP
+#define BUTTON_T2_DOWN CONFIG_BLINDS_CONTROLLER_BUTTON_T2_DOWN
+#define BUTTON_T2_UP CONFIG_BLINDS_CONTROLLER_BUTTON_T2_UP
 
 #define DEBOUNCE_TIME_MS 50
 

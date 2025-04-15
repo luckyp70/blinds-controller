@@ -1,53 +1,151 @@
-| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C5 | ESP32-C6 | ESP32-C61 | ESP32-H2 | ESP32-P4 | ESP32-S2 | ESP32-S3 | Linux |
-| ----------------- | ----- | -------- | -------- | -------- | -------- | --------- | -------- | -------- | -------- | -------- | ----- |
+# ESP32 Blinds Controller
 
-# Hello World Example
+A smart window blinds controller that uses ESP32 microcontroller with Zigbee connectivity to automate window blinds/shades operation.
 
-Starts a FreeRTOS task to print "Hello World".
+## Overview
 
-(See the README.md file in the upper level 'examples' directory for more information about examples.)
+This project implements a window blinds controller using ESP32 that can control up to two motors for automated window coverings. The controller integrates with Zigbee networks to provide wireless control capabilities and supports physical button controls for manual operation.
 
-## How to use example
+## Features
 
-Follow detailed instructions provided specifically for this example.
+- **Dual Motor Control**: Can control two separate motors for up/down movement
+- **Physical Button Controls**: Four buttons for manual operation (up/down for each blind)
+- **Zigbee Connectivity**: Integrates with home automation systems using Zigbee protocol
+- **Safety Timeout**: Automatic motor cutoff after 15 seconds to prevent overheating
+- **Window Covering Zigbee Cluster**: Implements the standard Zigbee HA Window Covering cluster
 
-Select the instructions depending on Espressif chip installed on your development board:
+## Hardware Requirements
 
-- [ESP32 Getting Started Guide](https://docs.espressif.com/projects/esp-idf/en/stable/get-started/index.html)
-- [ESP32-S2 Getting Started Guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s2/get-started/index.html)
+- ESP32 development board (ESP32-C6 recommended)
+- Motor driver (H-bridge) for controlling DC motors, like the DRV8871
+- 2 DC motors for blinds operation
+- 4 buttons for manual control
+- Power supply appropriate for your motors and ESP32
+- Blinds/shade mechanism compatible with the motors
 
+### GPIO Pin Assignments
 
-## Example folder contents
+| Component      | GPIO Pin | Description                                       |
+| -------------- | -------- | ------------------------------------------------- |
+| Motor 1 IN1    | 4        | Motor 1 control pin 1 for DRV8871 H-Bridge driver |
+| Motor 1 IN2    | 5        | Motor 1 control pin 2 for DRV8871 H-Bridge driver |
+| Motor 2 IN1    | 6        | Motor 2 control pin 1 for DRV8871 H-Bridge driver |
+| Motor 2 IN2    | 7        | Motor 2 control pin 2 for DRV8871 H-Bridge driver |
+| Button T1 UP   | 11       | Blind 1 up button                                 |
+| Button T1 DOWN | 10       | Blind 1 down button                               |
+| Button T2 UP   | 15       | Blind 2 up button                                 |
+| Button T2 DOWN | 14       | Blind 2 down button                               |
 
-The project **hello_world** contains one source file in C language [hello_world_main.c](main/hello_world_main.c). The file is located in folder [main](main).
+## Software Requirements
 
-ESP-IDF projects are built using CMake. The project build configuration is contained in `CMakeLists.txt` files that provide set of directives and instructions describing the project's source files and targets (executable, library, or both).
+- ESP-IDF v5.4 or later
+- ESP-Zigbee-SDK (included as components)
 
-Below is short explanation of remaining files in the project folder.
+## Building the Project
+
+1. Install ESP-IDF following the [official installation guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html)
+2. Clone this repository:
+   ```
+   git clone https://github.com/yourusername/esp32-blinds-controller.git
+   cd esp32-blinds-controller
+   ```
+3. Configure the project (optional):
+
+   ```
+   idf.py menuconfig
+   ```
+
+   Navigate to "Blinds Controller Configuration" to customize hardware settings.
+
+4. Build the project:
+
+   ```
+   idf.py build
+   ```
+
+5. Flash to your ESP32:
+
+   ```
+   idf.py -p PORT flash
+   ```
+
+   Replace PORT with your ESP32 serial port (e.g., /dev/ttyUSB0 on Linux, COM3 on Windows)
+
+6. Monitor the output (optional):
+   ```
+   idf.py -p PORT monitor
+   ```
+
+## Zigbee Configuration
+
+The controller is configured as a Zigbee End Device by default, implementing the Window Covering device profile. It can be paired with any Zigbee coordinator (like Home Assistant with Zigbee2MQTT, Samsung SmartThings, etc.).
+
+To modify Zigbee settings, use `idf.py menuconfig` and navigate to "Blinds Controller Configuration" → "Zigbee Configuration".
+
+## Usage
+
+### Initial Setup
+
+1. Connect the hardware according to the GPIO pin assignments
+2. Flash the firmware to the ESP32
+3. Power up the controller
+4. Put your Zigbee coordinator in pairing mode
+5. The controller will automatically join the Zigbee network
+
+### Manual Control
+
+- Press the UP buttons to raise the corresponding blind
+- Press the DOWN buttons to lower the corresponding blind
+- Press the same button again (or the opposite direction button) to stop movement
+
+### Zigbee Control
+
+The controller implements the Zigbee Home Automation Window Covering cluster, which supports the following commands:
+
+- Up/Down/Stop
+- Go to lift percentage
+- Go to tilt percentage (if your blinds mechanism supports tilting)
+
+## Project Structure
 
 ```
-├── CMakeLists.txt
-├── pytest_hello_world.py      Python script used for automated testing
-├── main
-│   ├── CMakeLists.txt
-│   └── hello_world_main.c
-└── README.md                  This is the file you are currently reading
+├── CMakeLists.txt          # Project-level CMake configuration
+├── main                    # Main application source code
+│   ├── buttons.c           # Button handling implementation
+│   ├── buttons.h           # Button interface declarations
+│   ├── CMakeLists.txt      # Component-level CMake configuration
+│   ├── Kconfig             # Project configuration options
+│   ├── main.c              # Application entry point
+│   ├── motors.c            # Motor control implementation
+│   ├── motors.h            # Motor control interface declarations
+│   ├── zigbee.c            # Zigbee functionality implementation
+│   └── zigbee.h            # Zigbee interface declarations
+└── README.md               # This file
 ```
 
-For more information on structure and contents of ESP-IDF projects, please refer to Section [Build System](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/build-system.html) of the ESP-IDF Programming Guide.
+## License
+
+This project is licensed under the MIT License - see the header comments in the source files for details.
+
+## Authors
+
+- Fortunato Pasqualone - Initial work - April 2025
 
 ## Troubleshooting
 
-* Program upload failure
+### Common Issues
 
-    * Hardware connection is not correct: run `idf.py -p PORT monitor`, and reboot your board to see if there are any output logs.
-    * The baud rate for downloading is too high: lower your baud rate in the `menuconfig` menu, and try again.
+- **Motors not moving**: Check wiring and power supply to motors
+- **Buttons not responsive**: Verify GPIO connections and pull-up/pull-down settings
+- **Cannot join Zigbee network**: Ensure coordinator is in pairing mode and within range
+- **Uneven blind movement**: Adjust motor timeout value in motors.c (MOTOR_TIMEOUT_MS)
 
-## Technical support and feedback
+## Contributing
 
-Please use the following feedback channels:
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-* For technical queries, go to the [esp32.com](https://esp32.com/) forum
-* For a feature request or bug report, create a [GitHub issue](https://github.com/espressif/esp-idf/issues)
-
-We will get back to you as soon as possible.
+1. Fork the Project
+2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the Branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request

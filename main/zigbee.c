@@ -3,6 +3,7 @@
 
 #include "esp_log.h"
 #include "ha/esp_zigbee_ha_standard.h"
+#include "zcl/esp_zigbee_zcl_window_covering.h"
 
 #if !defined ZB_ED_ROLE
 #error Define ZB_ED_ROLE in idf.py menuconfig to compile light (End Device) source code.
@@ -10,27 +11,43 @@
 
 static const char *TAG = "ZIGBEE";
 
+/**
+ * @brief Initializes the driver logic in a deferred manner.
+ *
+ * @return ESP_OK if the driver is initialized successfully, ESP_FAIL otherwise.
+ */
 static esp_err_t deferred_driver_init(void)
 {
     static bool is_inited = false;
     if (!is_inited)
     {
-        // light_driver_init(LIGHT_DEFAULT_OFF); // TODO adapt logic
+        // TODO: Adapt logic for initializing the driver
         is_inited = true;
     }
     return is_inited ? ESP_OK : ESP_FAIL;
 }
 
+/**
+ * @brief Callback to start top-level commissioning for Zigbee.
+ *
+ * @param mode_mask The commissioning mode mask.
+ */
 static void bdb_start_top_level_commissioning_cb(uint8_t mode_mask)
 {
     ESP_RETURN_ON_FALSE(esp_zb_bdb_start_top_level_commissioning(mode_mask) == ESP_OK, , TAG, "Failed to start Zigbee commissioning");
 }
 
+/**
+ * @brief Handles Zigbee application signals.
+ *
+ * @param signal_struct The Zigbee application signal structure.
+ */
 void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
 {
     uint32_t *p_sg_p = signal_struct->p_app_signal;
     esp_err_t err_status = signal_struct->esp_err_status;
     esp_zb_app_signal_type_t sig_type = *p_sg_p;
+
     switch (sig_type)
     {
     case ESP_ZB_ZDO_SIGNAL_SKIP_STARTUP:
@@ -84,31 +101,50 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
     }
 }
 
+/**
+ * @brief Handles Zigbee attribute updates.
+ *
+ * @param message The Zigbee attribute update message.
+ * @return ESP_OK if the attribute is handled successfully, an error code otherwise.
+ */
 static esp_err_t zb_attribute_handler(const esp_zb_zcl_set_attr_value_message_t *message)
 {
     esp_err_t ret = ESP_OK;
-    bool light_state = 0;
 
     ESP_RETURN_ON_FALSE(message, ESP_FAIL, TAG, "Empty message");
     ESP_RETURN_ON_FALSE(message->info.status == ESP_ZB_ZCL_STATUS_SUCCESS, ESP_ERR_INVALID_ARG, TAG, "Received message: error status(%d)",
                         message->info.status);
+
     ESP_LOGI(TAG, "Received message: endpoint(%d), cluster(0x%x), attribute(0x%x), data size(%d)", message->info.dst_endpoint, message->info.cluster,
              message->attribute.id, message->attribute.data.size);
-    if (message->info.dst_endpoint == HA_ESP_LIGHT_ENDPOINT)
+
+    if (message->info.dst_endpoint == HA_ESP_WINDOW_COVERING_ENDPOINT)
     {
-        if (message->info.cluster == ESP_ZB_ZCL_CLUSTER_ID_ON_OFF)
+        if (message->info.cluster == ESP_ZB_ZCL_CLUSTER_ID_WINDOW_COVERING)
         {
-            if (message->attribute.id == ESP_ZB_ZCL_ATTR_ON_OFF_ON_OFF_ID && message->attribute.data.type == ESP_ZB_ZCL_ATTR_TYPE_BOOL)
+            switch (message->attribute.id)
             {
-                light_state = message->attribute.data.value ? *(bool *)message->attribute.data.value : light_state;
-                ESP_LOGI(TAG, "Light sets to %s", light_state ? "On" : "Off");
-                // light_driver_set_power(light_state); // TODO adapt logic
+            case ESP_ZB_ZCL_ATTR_WINDOW_COVERING_CURRENT_POSITION_LIFT_PERCENTAGE_ID:
+                ESP_LOGI(TAG, "Window covering position set to %d%%", *(uint8_t *)message->attribute.data.value);
+                // TODO: Add logic to move the motor to the specified position
+                break;
+            default:
+                ESP_LOGW(TAG, "Unsupported attribute ID: 0x%x", message->attribute.id);
+                break;
             }
         }
     }
+
     return ret;
 }
 
+/**
+ * @brief Handles Zigbee actions and commands.
+ *
+ * @param callback_id The Zigbee action callback ID.
+ * @param message The Zigbee action message.
+ * @return ESP_OK if the action is handled successfully, an error code otherwise.
+ */
 static esp_err_t zb_action_handler(esp_zb_core_action_callback_id_t callback_id, const void *message)
 {
     esp_err_t ret = ESP_OK;
@@ -117,33 +153,80 @@ static esp_err_t zb_action_handler(esp_zb_core_action_callback_id_t callback_id,
     case ESP_ZB_CORE_SET_ATTR_VALUE_CB_ID:
         ret = zb_attribute_handler((esp_zb_zcl_set_attr_value_message_t *)message);
         break;
+    case ESP_ZB_CORE_CMD_CUSTOM_CLUSTER_REQ_CB_ID:
+    {
+        const esp_zb_zcl_custom_cluster_command_message_t *cmd_message = (const esp_zb_zcl_custom_cluster_command_message_t *)message;
+        ESP_LOGI(TAG, "Received command: cluster(0x%x), command(0x%x)", cmd_message->info.cluster, cmd_message->info.command.id);
+
+        if (cmd_message->info.cluster == ESP_ZB_ZCL_CLUSTER_ID_WINDOW_COVERING)
+        {
+            switch (cmd_message->info.command.id)
+            {
+            case ESP_ZB_ZCL_CMD_WINDOW_COVERING_UP_OPEN:
+                ESP_LOGI(TAG, "Window covering UP/Open command received");
+                // TODO: Add logic to move the motor up
+                break;
+            case ESP_ZB_ZCL_CMD_WINDOW_COVERING_DOWN_CLOSE:
+                ESP_LOGI(TAG, "Window covering DOWN/Close command received");
+                // TODO: Add logic to move the motor down
+                break;
+            case ESP_ZB_ZCL_CMD_WINDOW_COVERING_STOP:
+                ESP_LOGI(TAG, "Window covering STOP command received");
+                // TODO: Add logic to stop the motor
+                break;
+            default:
+                ESP_LOGW(TAG, "Unsupported command ID: 0x%x", cmd_message->info.command.id);
+                break;
+            }
+        }
+    }
+    break;
     default:
-        ESP_LOGW(TAG, "Receive Zigbee action(0x%x) callback", callback_id);
+        ESP_LOGW(TAG, "Received unhandled Zigbee action(0x%x) callback", callback_id);
         break;
     }
     return ret;
 }
 
+/**
+ * @brief Zigbee task to initialize and start the Zigbee stack.
+ *
+ * @param pvParameters Task parameters (unused).
+ */
 static void esp_zb_task(void *pvParameters)
 {
-    /* initialize Zigbee stack */
+    /* Initialize Zigbee stack */
     esp_zb_cfg_t zb_nwk_cfg = ESP_ZB_ZED_CONFIG();
     esp_zb_init(&zb_nwk_cfg);
-    esp_zb_on_off_light_cfg_t light_cfg = ESP_ZB_DEFAULT_ON_OFF_LIGHT_CONFIG();
-    esp_zb_ep_list_t *esp_zb_on_off_light_ep = esp_zb_on_off_light_ep_create(HA_ESP_LIGHT_ENDPOINT, &light_cfg);
+
+    /* Configure Window Covering cluster */
+    esp_zb_window_covering_cfg_t window_covering_cfg = ESP_ZB_DEFAULT_WINDOW_COVERING_CONFIG();
+
+    /* Create the endpoint for Window Covering */
+    esp_zb_ep_list_t *esp_zb_window_covering_ep = esp_zb_window_covering_ep_create(HA_ESP_WINDOW_COVERING_ENDPOINT, &window_covering_cfg);
+
+    /* Add manufacturer info */
     zcl_basic_manufacturer_info_t info = {
         .manufacturer_name = ESP_MANUFACTURER_NAME,
         .model_identifier = ESP_MODEL_IDENTIFIER,
     };
+    esp_zcl_utility_add_ep_basic_manufacturer_info(esp_zb_window_covering_ep, HA_ESP_WINDOW_COVERING_ENDPOINT, &info);
 
-    esp_zcl_utility_add_ep_basic_manufacturer_info(esp_zb_on_off_light_ep, HA_ESP_LIGHT_ENDPOINT, &info);
-    esp_zb_device_register(esp_zb_on_off_light_ep);
+    /* Register endpoint and handlers */
+    esp_zb_device_register(esp_zb_window_covering_ep);
     esp_zb_core_action_handler_register(zb_action_handler);
+
+    /* Set Zigbee network configuration */
     esp_zb_set_primary_network_channel_set(ESP_ZB_PRIMARY_CHANNEL_MASK);
+
+    /* Start Zigbee stack */
     ESP_ERROR_CHECK(esp_zb_start(false));
     esp_zb_stack_main_loop();
 }
 
+/**
+ * @brief Initializes the Zigbee stack and starts the Zigbee task.
+ */
 void zigbee_init(void)
 {
     // Initialize Zigbee

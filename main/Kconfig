@@ -1,0 +1,97 @@
+menu "Blinds Controller Configuration"
+
+    menu "Hardware Configuration"
+
+        menu "Motor Driver GPIO Configuration"
+
+            config BLINDS_CONTROLLER_MOTOR_1_IN1
+                int "Motor 1 IN1 GPIO"
+                default 4
+                range 0 39
+                help
+                    GPIO pin connected to Motor 1 IN1.
+    
+            config BLINDS_CONTROLLER_MOTOR_1_IN2
+                int "Motor 1 IN2 GPIO"
+                default 5
+                range 0 39
+                help
+                    GPIO pin connected to Motor 1 IN2.
+    
+            config BLINDS_CONTROLLER_MOTOR_2_IN1
+                int "Motor 2 IN1 GPIO"
+                default 6
+                range 0 39
+                help
+                    GPIO pin connected to Motor 2 IN1.
+    
+            config BLINDS_CONTROLLER_MOTOR_2_IN2
+                int "Motor 2 IN2 GPIO"
+                default 7
+                range 0 39
+                help
+                    GPIO pin connected to Motor 2 IN2.
+    
+        endmenu
+
+        menu "Physical Buttons GPIO Configuration"
+
+            config BLINDS_CONTROLLER_BUTTON_T1_DOWN
+                int "Button T1 DOWN GPIO"
+                default 10
+                range 0 39
+                help
+                    GPIO pin for Button T1 DOWN.
+    
+            config BLINDS_CONTROLLER_BUTTON_T1_UP
+                int "Button T1 UP GPIO"
+                default 11
+                range 0 39
+                help
+                    GPIO pin for Button T1 UP.
+    
+            config BLINDS_CONTROLLER_BUTTON_T2_DOWN
+                int "Button T2 DOWN GPIO"
+                default 14
+                range 0 39
+                help
+                    GPIO pin for Button T2 DOWN.
+    
+            config BLINDS_CONTROLLER_BUTTON_T2_UP
+                int "Button T2 UP GPIO"
+                default 15
+                range 0 39
+                help
+                    GPIO pin for Button T2 UP.
+    
+        endmenu
+
+    endmenu
+
+    menu "Zigbee Configuration"
+
+        choice BLINDS_CONTROLLER_ZB_ROLE
+            prompt "Zigbee Device Role"
+            default ZIGBEE_ROLE_END_DEVICE
+            help
+                Select the Zigbee device role for this blinds controller.
+
+            config ZIGBEE_ROLE_ROUTER
+                bool "Router"
+            
+            config ZIGBEE_ROLE_END_DEVICE
+                bool "End Device (ZED)"
+        endchoice
+
+        config BLINDS_CONTROLLER_INSTALLCODE_POLICY_ENABLE
+            bool "Enable Install Code Policy"
+            default y
+
+        config BLINDS_CONTROLLER_ED_KEEP_ALIVE
+            int "End Device Keep Alive (milliseconds)"
+            default 3000
+            range 1 65535
+
+    endmenu
+
+endmenu

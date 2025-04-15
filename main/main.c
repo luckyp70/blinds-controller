@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2025 Fortunato Pasqualone.
  *
- * This file is part of the ESP32 Screen Controller project.
+ * This file is part of the ESP32 Blinds Controller project.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -46,7 +46,7 @@ static const char *TAG = "MAIN";
 
 void app_main(void)
 {
-    ESP_LOGI(TAG, "Starting ESP32 Screen Controller...");
+    ESP_LOGI(TAG, "Starting ESP32 Blinds Controller...");
 
     ESP_ERROR_CHECK(nvs_flash_init());
 

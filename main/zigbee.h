@@ -1,13 +1,25 @@
 #pragma once
 
 #include "esp_zigbee_core.h"
+#include "sdkconfig.h"
 #include "zcl_utility.h"
 
+#if CONFIG_BLINDS_CONTROLLER_ZB_ROLE == CONFIG_ZIGBEE_ROLE_ROUTER
+// Zigbee Router
+#define ZB_ROLE ESP_ZB_DEVICE_TYPE_ROUTER
+#elif CONFIG_BLINDS_CONTROLLER_ZB_ROLE == CONFIG_ZIGBEE_ROLE_END_DEVICE
+// Zigbee End Device
+#define ZB_ROLE ESP_ZB_DEVICE_TYPE_ED
+#else
+#error "No valid Zigbee role selected in Kconfig"
+#endif
+
 /* Zigbee configuration */
-#define INSTALLCODE_POLICY_ENABLE false /* enable the install code policy for security */
+#define INSTALLCODE_POLICY_ENABLE CONFIG_BLINDS_CONTROLLER_INSTALLCODE_POLICY_ENABLE /* enable the install code policy for security */
 #define ED_AGING_TIMEOUT ESP_ZB_ED_AGING_TIMEOUT_64MIN
-#define ED_KEEP_ALIVE 3000                                               /* 3000 millisecond */
-#define HA_ESP_LIGHT_ENDPOINT 10                                         /* esp light bulb device endpoint, used to process light controlling commands */
+#define ED_KEEP_ALIVE CONFIG_BLINDS_CONTROLLER_ED_KEEP_ALIVE /* 3000 millisecond */
+// #define HA_ESP_LIGHT_ENDPOINT 10                                         /* esp light bulb device endpoint, used to process light controlling commands */
+#define HA_ESP_WINDOW_COVERING_ENDPOINT 0x0A                             /* esp window covering device endpoint, used to process window covering controlling commands */
 #define ESP_ZB_PRIMARY_CHANNEL_MASK ESP_ZB_TRANSCEIVER_ALL_CHANNELS_MASK /* Zigbee primary channel mask use in the example */
 
 /* Basic manufacturer information */
@@ -17,7 +29,7 @@
 
 #define ESP_ZB_ZED_CONFIG()                               \
     {                                                     \
-        .esp_zb_role = ESP_ZB_DEVICE_TYPE_ED,             \
+        .esp_zb_role = ZB_ROLE,                           \
         .install_code_policy = INSTALLCODE_POLICY_ENABLE, \
         .nwk_cfg.zed_cfg = {                              \
             .ed_timeout = ED_AGING_TIMEOUT,               \

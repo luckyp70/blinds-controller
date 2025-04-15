@@ -2057,6 +2057,43 @@ CONFIG_WIFI_PROV_STA_ALL_CHANNEL_SCAN=y
 # end of Wi-Fi Provisioning Manager
 
 #
+# Blinds Controller Configuration
+#
+
+#
+# Hardware Configuration
+#
+
+#
+# Motor Driver GPIO Configuration
+#
+CONFIG_BLINDS_CONTROLLER_MOTOR_1_IN1=4
+CONFIG_BLINDS_CONTROLLER_MOTOR_1_IN2=5
+CONFIG_BLINDS_CONTROLLER_MOTOR_2_IN1=6
+CONFIG_BLINDS_CONTROLLER_MOTOR_2_IN2=7
+# end of Motor Driver GPIO Configuration
+
+#
+# Physical Buttons GPIO Configuration
+#
+CONFIG_BLINDS_CONTROLLER_BUTTON_T1_DOWN=10
+CONFIG_BLINDS_CONTROLLER_BUTTON_T1_UP=11
+CONFIG_BLINDS_CONTROLLER_BUTTON_T2_DOWN=14
+CONFIG_BLINDS_CONTROLLER_BUTTON_T2_UP=15
+# end of Physical Buttons GPIO Configuration
+# end of Hardware Configuration
+
+#
+# Zigbee Configuration
+#
+# CONFIG_ZIGBEE_ROLE_ROUTER is not set
+CONFIG_ZIGBEE_ROLE_END_DEVICE=y
+CONFIG_BLINDS_CONTROLLER_INSTALLCODE_POLICY_ENABLE=y
+CONFIG_BLINDS_CONTROLLER_ED_KEEP_ALIVE=3000
+# end of Zigbee Configuration
+# end of Blinds Controller Configuration
+
+#
 # Zigbee
 #
 CONFIG_ZB_ENABLED=y

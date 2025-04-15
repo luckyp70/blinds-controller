@@ -9,9 +9,12 @@ idf_component_register(
     PRIV_REQUIRES 
         "nvs_flash"
         "esp_driver_gpio"
+        "esp-zigbee-lib"
 
     INCLUDE_DIRS 
         "."
         "zcl_utility/include"
+
 )
 
+set(COMPONENT_KCONFIG Kconfig)
