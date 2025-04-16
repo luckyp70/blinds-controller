@@ -55,8 +55,8 @@ void app_main(void)
 
     // Initialize modules
     ESP_ERROR_CHECK(app_event_init());
+    ESP_ERROR_CHECK(motors_init());
 
-    motors_init();
     buttons_init();
     zigbee_init();
     blinds_init();

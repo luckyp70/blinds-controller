@@ -91,7 +91,7 @@ static void blind_stopping_event_handler(void *arg, esp_event_base_t event_base,
 /**
  * @brief Initializes the motor driver pins and sets their initial state.
  */
-void motors_init(void)
+esp_err_t motors_init(void)
 {
     ESP_LOGI(TAG, "Initializing motor driver pins...");
 
@@ -105,16 +105,19 @@ void motors_init(void)
             .intr_type = GPIO_INTR_DISABLE};
 
         // Configure the GPIO pins for the motor
-        gpio_config(&io_conf);
+        ESP_RETURN_ON_ERROR(gpio_config(&io_conf), TAG, "Failed to configure GPIO pins for motor %d", i);
 
         motor_stop(i); // Set initial state of motors to low
     }
     ESP_LOGI(TAG, "Motor driver pins initialized.");
 
     // Register event handlers for motor events
-    app_event_register(APP_EVENT_BLIND_OPENING, &blind_opening_event_handler, NULL);
-    app_event_register(APP_EVENT_BLIND_CLOSING, &blind_closing_event_handler, NULL);
-    app_event_register(APP_EVENT_BLIND_STOPPING, &blind_stopping_event_handler, NULL);
+    ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_OPENING, &blind_opening_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_OPENING");
+    ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_CLOSING, &blind_closing_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_CLOSING");
+    ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_STOPPING, &blind_stopping_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_STOPPING");
+    ESP_LOGI(TAG, "Event handlers registered.");
+
+    return ESP_OK;
 }
 
 /**

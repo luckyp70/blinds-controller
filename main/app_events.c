@@ -30,7 +30,7 @@ esp_err_t app_event_init(void)
         .task_name = "app_event_task", /**< Task name */
         .task_priority = 5,            /**< Task priority */
         .task_stack_size = 4096,       /**< Stack size for the task */
-        .task_core_id = 1,             /**< Core ID where the task runs */
+        .task_core_id = 0,             /**< Core ID where the task runs */
     };
 
     ESP_RETURN_ON_ERROR(esp_event_loop_create(&loop_args, &app_event_loop),
@@ -54,7 +54,8 @@ esp_err_t app_event_register(app_event_id_t event_id, esp_event_handler_t event_
 {
     // Register the event handler for the specified event ID
     ESP_RETURN_ON_ERROR(
-        esp_event_handler_register(
+        esp_event_handler_register_with(
+            app_event_loop,
             APP_EVENT,
             event_id,
             event_handler,

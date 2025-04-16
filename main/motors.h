@@ -37,6 +37,8 @@
 
 #pragma once
 
+#include "esp_err.h"
+
 /**
  * @brief Motor identifiers
  *
@@ -66,7 +68,7 @@ typedef enum
  *
  * Sets up hardware, pins, and initial states for all motors
  */
-void motors_init(void);
+esp_err_t motors_init(void);
 
 /**
  * @brief Start moving the specified motor up
