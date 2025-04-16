@@ -56,9 +56,9 @@ typedef enum
  */
 typedef enum
 {
-    MOTOR_STOPPED = 0,     /**< Motor is not moving */
-    MOTOR_MOVING_UP = 1,   /**< Motor is moving blinds up */
-    MOTOR_MOVING_DOWN = 2, /**< Motor is moving blinds down */
+    MOTOR_STOPPED = 0, /**< Motor is not moving */
+    MOTOR_MOVING_UP,   /**< Motor is moving blinds up */
+    MOTOR_MOVING_DOWN, /**< Motor is moving blinds down */
 } motor_state_t;
 
 /**
@@ -88,26 +88,6 @@ void motor_down(motor_id_t motor_id);
  * @param motor_id The motor to control
  */
 void motor_stop(motor_id_t motor_id);
-
-/**
- * @brief Toggle the motor between up and stopped states
- *
- * If the motor is moving up, it stops.
- * If the motor is stopped or moving down, it moves up.
- *
- * @param motor_id The motor to control
- */
-void motor_toggle_up(motor_id_t motor_id);
-
-/**
- * @brief Toggle the motor between down and stopped states
- *
- * If the motor is moving down, it stops.
- * If the motor is stopped or moving up, it moves down.
- *
- * @param motor_id The motor to control
- */
-void motor_toggle_down(motor_id_t motor_id);
 
 /**
  * @brief Get the current state of the specified motor

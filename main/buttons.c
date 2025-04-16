@@ -3,6 +3,7 @@
  * @brief Implementation of button handling functionality for blinds controller
  */
 #include "buttons.h"
+#include "app_events.h"
 #include "motors.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
@@ -20,7 +21,7 @@ static const char *TAG = "BUTTONS";
 #define BUTTON_T2_UP CONFIG_BLINDS_CONTROLLER_BUTTON_T2_UP
 
 /* Time in milliseconds for button debounce */
-#define DEBOUNCE_TIME_MS 50
+#define DEBOUNCE_TIME_MS 25
 
 /**
  * @brief GPIO mapping for each button
@@ -30,6 +31,16 @@ static const gpio_num_t button_gpios[BUTTON_COUNT] = {
     [BUTTON_T1_DOWN_ID] = BUTTON_T1_DOWN,
     [BUTTON_T2_UP_ID] = BUTTON_T2_UP,
     [BUTTON_T2_DOWN_ID] = BUTTON_T2_DOWN,
+};
+
+/**
+ * @brief Motor mapping for each button
+ */
+static const motor_id_t button_to_motor[BUTTON_COUNT] = {
+    [BUTTON_T1_UP_ID] = MOTOR_1,
+    [BUTTON_T1_DOWN_ID] = MOTOR_1,
+    [BUTTON_T2_UP_ID] = MOTOR_2,
+    [BUTTON_T2_DOWN_ID] = MOTOR_2,
 };
 
 /* Timers for button debounce handling */
@@ -75,18 +86,24 @@ static void debounce_timer_callback(TimerHandle_t xTimer)
     {
         ESP_LOGI(TAG, "Button %d pressed", button_id);
 
-        /* Determine which motor and direction to control */
-        motor_id_t motor = (button_id == BUTTON_T1_UP_ID || button_id == BUTTON_T1_DOWN_ID) ? MOTOR_1 : MOTOR_2;
+        /* Use the button_to_motor map to determine the motor */
+        motor_id_t motor_id = button_to_motor[button_id];
         bool is_up = (button_id == BUTTON_T1_UP_ID || button_id == BUTTON_T2_UP_ID);
 
+        app_event_id_t event_id;
+        motor_state_t motor_state = motor_get_state(motor_id);
+
+        // Please notice: since there is no physical stop button, we stop the motor
+        // when a button is pressed again while the motor is moving in the direction of the button.
         if (is_up)
         {
-            motor_toggle_up(motor);
+            event_id = (motor_state == MOTOR_MOVING_UP) ? APP_EVENT_BLIND_STOPPING : APP_EVENT_BLIND_OPENING;
         }
         else
         {
-            motor_toggle_down(motor);
+            event_id = (motor_state == MOTOR_MOVING_DOWN) ? APP_EVENT_BLIND_STOPPING : APP_EVENT_BLIND_CLOSING;
         }
+        app_event_post(event_id, &motor_id, sizeof(motor_id));
     }
 }
 
@@ -95,14 +112,20 @@ static void debounce_timer_callback(TimerHandle_t xTimer)
  *
  * Configures GPIO pins, creates debounce timers and installs ISR handlers
  * for all buttons used in the blinds controller.
+ *
  */
 void buttons_init(void)
 {
     ESP_LOGI(TAG, "Initializing buttons...");
 
+    /* Configure GPIO pins for buttons.
+     * Internal pull up and down resistors are disabled assuming that debouncing is
+     * handled externally (a typical configuration includes a pull up resistor: 122kΩ,
+     * a 100nF capacitor between GPIO and the ground and a 22kΩ resistor in series with the button).
+     */
     gpio_config_t io_conf = {
         .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_NEGEDGE,
         .pin_bit_mask = 0,

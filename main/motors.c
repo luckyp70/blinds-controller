@@ -3,10 +3,12 @@
  * @brief Implementation of motor control functionality for blinds controller
  */
 #include "motors.h"
+#include "app_events.h"
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
 #include "esp_log.h"
+#include "esp_check.h"
 #include "driver/gpio.h"
 #include "soc/gpio_struct.h"
 
@@ -34,7 +36,7 @@ static motor_state_t motor_states[2] = {MOTOR_STOPPED, MOTOR_STOPPED};
 static TimerHandle_t motor_timers[2] = {NULL, NULL};
 
 /**
- * @brief Sets the direction of the motor by configuring GPIO levels.
+ * @brief Set the direction of the motor by configuring GPIO levels.
  *
  * @param motor_id The ID of the motor to configure.
  * @param in1_level The level to set for the IN1 pin.
@@ -43,18 +45,48 @@ static TimerHandle_t motor_timers[2] = {NULL, NULL};
 static void motors_set_direction(motor_id_t motor, bool in1_level, bool in2_level);
 
 /**
- * @brief Starts or resets the timeout timer for the specified motor.
+ * @brief Start or reset the timeout timer for the specified motor.
  *
  * @param motor_id The ID of the motor to start the timer for.
  */
 static void motor_start_timeout_timer(motor_id_t motor_id);
 
 /**
- * @brief Stops the timeout timer for the specified motor.
+ * @brief Stop the timeout timer for the specified motor.
  *
  * @param motor_id The ID of the motor to stop the timer for.
  */
 static void motor_stop_safety_timeout_timer(motor_id_t motor_id);
+
+/**
+ * @brief Event handler for blind opening events.
+ *
+ * @param arg Pointer to the motor ID (as void*).
+ * @param event_base Event base (should be APP_EVENT).
+ * @param event_id Event ID (should be APP_EVENT_BLIND_OPENING).
+ * @param event_data Pointer to event data (unused).
+ */
+static void blind_opening_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
+
+/**
+ * @brief Event handler for blind closing events.
+ *
+ * @param arg Pointer to the motor ID (as void*).
+ * @param event_base Event base (should be APP_EVENT).
+ * @param event_id Event ID (should be APP_EVENT_BLIND_CLOSING).
+ * @param event_data Pointer to event data (unused).
+ */
+static void blind_closing_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
+
+/**
+ * @brief Event handler for blind stopping events.
+ *
+ * @param arg Pointer to the motor ID (as void*).
+ * @param event_base Event base (should be APP_EVENT).
+ * @param event_id Event ID (should be APP_EVENT_BLIND_STOPPING).
+ * @param event_data Pointer to event data (unused).
+ */
+static void blind_stopping_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 
 /**
  * @brief Initializes the motor driver pins and sets their initial state.
@@ -78,10 +110,15 @@ void motors_init(void)
         motor_stop(i); // Set initial state of motors to low
     }
     ESP_LOGI(TAG, "Motor driver pins initialized.");
+
+    // Register event handlers for motor events
+    app_event_register(APP_EVENT_BLIND_OPENING, &blind_opening_event_handler, NULL);
+    app_event_register(APP_EVENT_BLIND_CLOSING, &blind_closing_event_handler, NULL);
+    app_event_register(APP_EVENT_BLIND_STOPPING, &blind_stopping_event_handler, NULL);
 }
 
 /**
- * @brief Moves the specified motor up.
+ * @brief Moves the specified motor up (open blinds).
  *
  * @param motor_id The ID of the motor to move up.
  */
@@ -95,7 +132,7 @@ void motor_up(motor_id_t motor_id)
 }
 
 /**
- * @brief Moves the specified motor down.
+ * @brief Moves the specified motor down (close blinds).
  *
  * @param motor_id The ID of the motor to move down.
  */
@@ -131,40 +168,6 @@ void motor_stop(motor_id_t motor_id)
 motor_state_t motor_get_state(motor_id_t motor_id)
 {
     return motor_states[motor_id];
-}
-
-/**
- * @brief Toggles the motor state between moving up and stopped.
- *
- * @param motor_id The ID of the motor to toggle.
- */
-void motor_toggle_up(motor_id_t motor_id)
-{
-    if (motor_states[motor_id] == MOTOR_MOVING_UP)
-    {
-        motor_stop(motor_id);
-    }
-    else
-    {
-        motor_up(motor_id);
-    }
-}
-
-/**
- * @brief Toggles the motor state between moving down and stopped.
- *
- * @param motor_id The ID of the motor to toggle.
- */
-void motor_toggle_down(motor_id_t motor_id)
-{
-    if (motor_states[motor_id] == MOTOR_MOVING_DOWN)
-    {
-        motor_stop(motor_id);
-    }
-    else
-    {
-        motor_down(motor_id);
-    }
 }
 
 /**
@@ -212,11 +215,13 @@ static void motor_timeout_callback(TimerHandle_t xTimer)
     motor_id_t motor_id = (motor_id_t)(uintptr_t)pvTimerGetTimerID(xTimer); // Retrieve motor ID from timer
     ESP_LOGI(TAG, "Motor %d timed out — stopping", motor_id);
     motor_stop(motor_id); // Stop the motor
+
+    app_event_post(APP_EVENT_BLIND_STOPPED_ON_SAFETY_LIMIT, &motor_id, sizeof(motor_id)); // Post event indicating the motor has stopped
 }
 
 /**
  * @brief Starts or resets the timeout timer for the specified motor.
- * It's a safety measure to ensure the motor stops after a timeout.
+ *        It's a safety measure to ensure the motor stops after a timeout.
  *
  * @param motor_id The ID of the motor to start the timer for.
  */
@@ -239,7 +244,7 @@ static void motor_start_timeout_timer(motor_id_t motor_id)
 
 /**
  * @brief Stops the timeout timer for the specified motor.
- * It's a safety measure to ensure the motor stops after a timeout.
+ *        It's a safety measure to ensure the motor stops after a timeout.
  *
  * @param motor_id The ID of the motor to stop the timer for.
  */
@@ -249,4 +254,63 @@ static void motor_stop_safety_timeout_timer(motor_id_t motor_id)
     {
         xTimerStop(motor_timers[motor_id], 0); // Stop the timer
     }
+}
+
+/**
+ * @brief Event handler for blind opening events. Moves the motor up.
+ *
+ * @param arg Pointer to the motor ID (as void*).
+ * @param event_base Event base (should be APP_EVENT).
+ * @param event_id Event ID (should be APP_EVENT_BLIND_OPENING).
+ * @param event_data Pointer to event data (unused).
+ */
+static void blind_opening_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+{
+    ESP_RETURN_VOID_ON_FALSE(event_base == APP_EVENT, TAG, "Received event different from APP_EVENT base by the blind_opening_event_handler");
+
+    ESP_RETURN_VOID_ON_FALSE(event_id == APP_EVENT_BLIND_OPENING, TAG, "Received event different from APP_EVENT_BLIND_OPENING by the blind_opening_event_handler");
+
+    motor_id_t motor_id = (motor_id_t)(intptr_t)arg;
+    ESP_LOGI(TAG, "Blind opening event received for motor %d", motor_id);
+    motor_up(motor_id);
+}
+
+/**
+ * @brief Event handler for blind closing events. Moves the motor down.
+ *
+ * @param arg Pointer to the motor ID (as void*).
+ * @param event_base Event base (should be APP_EVENT).
+ * @param event_id Event ID (should be APP_EVENT_BLIND_CLOSING).
+ * @param event_data Pointer to event data (unused).
+ */
+static void blind_closing_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+{
+    ESP_RETURN_VOID_ON_FALSE(event_base == APP_EVENT, TAG, "Received event different from APP_EVENT base by the blind_closing_event_handler");
+
+    ESP_RETURN_VOID_ON_FALSE(event_id == APP_EVENT_BLIND_CLOSING, TAG, "Received event different from APP_EVENT_BLIND_CLOSING by the blind_closing_event_handler");
+
+    motor_id_t motor_id = (motor_id_t)(intptr_t)arg;
+    ESP_LOGI(TAG, "Blind closing event received for motor %d", motor_id);
+    motor_down(motor_id);
+}
+
+/**
+ * @brief Event handler for blind stopping events. Stops the motor.
+ *
+ * @param arg Pointer to the motor ID (as void*).
+ * @param event_base Event base (should be APP_EVENT).
+ * @param event_id Event ID (should be APP_EVENT_BLIND_STOPPING).
+ * @param event_data Pointer to event data (unused).
+ */
+static void blind_stopping_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+{
+    ESP_RETURN_VOID_ON_FALSE(event_base == APP_EVENT, TAG, "Received event different from APP_EVENT base by the blind_stopping_event_handler");
+
+    ESP_RETURN_VOID_ON_FALSE(event_id == APP_EVENT_BLIND_STOPPING, TAG, "Received event different from APP_EVENT_BLIND_STOPPING by the blind_stopping_event_handler");
+
+    motor_id_t motor_id = (motor_id_t)(intptr_t)arg;
+    ESP_LOGI(TAG, "Blind stopping event received for motor %d", motor_id);
+    motor_stop(motor_id);
+
+    app_event_post(APP_EVENT_BLIND_STOPPED, &motor_id, sizeof(motor_id)); // Post event indicating the motor has stopped
 }

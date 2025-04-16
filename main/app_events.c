@@ -2,6 +2,8 @@
 #include "esp_log.h"
 #include "esp_check.h"
 
+ESP_EVENT_DEFINE_BASE(APP_EVENT);
+
 static const char *TAG = "EVENTS";
 
 /**
