@@ -81,6 +81,9 @@ static void debounce_timer_callback(TimerHandle_t xTimer)
     button_id_t button_id = (button_id_t)(intptr_t)pvTimerGetTimerID(xTimer);
     gpio_num_t gpio_num = button_gpios[button_id];
 
+    // Disabilita temporaneamente l'interrupt del pulsante per evitare trigger multipli
+    gpio_isr_handler_remove(gpio_num);
+
     /* Check button state after debounce period */
     if (gpio_get_level(gpio_num) == 0)
     {
@@ -105,6 +108,9 @@ static void debounce_timer_callback(TimerHandle_t xTimer)
         }
         app_event_post(event_id, &motor_id, sizeof(motor_id));
     }
+
+    // Riabilita l'interrupt del pulsante dopo il debounce
+    gpio_isr_handler_add(gpio_num, gpio_isr_handler, (void *)button_id);
 }
 
 /**

@@ -35,6 +35,8 @@ static motor_state_t motor_states[2] = {MOTOR_STOPPED, MOTOR_STOPPED};
 
 static TimerHandle_t motor_timers[2] = {NULL, NULL};
 
+static portMUX_TYPE motor_mux = portMUX_INITIALIZER_UNLOCKED;
+
 /**
  * @brief Set the direction of the motor by configuring GPIO levels.
  *
@@ -107,7 +109,8 @@ esp_err_t motors_init(void)
         // Configure the GPIO pins for the motor
         ESP_RETURN_ON_ERROR(gpio_config(&io_conf), TAG, "Failed to configure GPIO pins for motor %d", i);
 
-        motor_stop(i); // Set initial state of motors to low
+        // motor_stop(i);                         // Set initial state of motors to low
+        motors_set_direction(i, false, false); // Set both IN1 and IN2 low
     }
     ESP_LOGI(TAG, "Motor driver pins initialized.");
 
@@ -128,8 +131,10 @@ esp_err_t motors_init(void)
 void motor_up(motor_id_t motor_id)
 {
     ESP_LOGI(TAG, "Moving motor %d up", motor_id);
+    portENTER_CRITICAL(&motor_mux);
     motors_set_direction(motor_id, true, false); // Set IN1 high and IN2 low
     motor_states[motor_id] = MOTOR_MOVING_UP;
+    portEXIT_CRITICAL(&motor_mux);
 
     motor_start_timeout_timer(motor_id); // Start the timeout timer
 }
@@ -142,8 +147,10 @@ void motor_up(motor_id_t motor_id)
 void motor_down(motor_id_t motor_id)
 {
     ESP_LOGI(TAG, "Moving motor %d down", motor_id);
+    portENTER_CRITICAL(&motor_mux);
     motors_set_direction(motor_id, false, true); // Set IN1 low and IN2 high
     motor_states[motor_id] = MOTOR_MOVING_DOWN;
+    portEXIT_CRITICAL(&motor_mux);
 
     motor_start_timeout_timer(motor_id); // Start the timeout timer
 }
@@ -156,9 +163,12 @@ void motor_down(motor_id_t motor_id)
 void motor_stop(motor_id_t motor_id)
 {
     ESP_LOGI(TAG, "Stopping motor %d", motor_id);
+    portENTER_CRITICAL(&motor_mux);
     motors_set_direction(motor_id, false, false); // Set both IN1 and IN2 low
     motor_states[motor_id] = MOTOR_STOPPED;
+    portEXIT_CRITICAL(&motor_mux);
 
+    // Call timer stop outside the critical section
     motor_stop_safety_timeout_timer(motor_id); // Stop the timeout timer
 }
 
