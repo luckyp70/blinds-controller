@@ -56,28 +56,28 @@ menu "Blinds Controller Configuration"
 
             config BLINDS_CONTROLLER_BUTTON_T1_DOWN
                 int "Button T1 DOWN GPIO"
-                default 10
+                default 11
                 range 0 39
                 help
                     GPIO pin for Button T1 DOWN.
     
             config BLINDS_CONTROLLER_BUTTON_T1_UP
                 int "Button T1 UP GPIO"
-                default 11
+                default 10
                 range 0 39
                 help
                     GPIO pin for Button T1 UP.
     
             config BLINDS_CONTROLLER_BUTTON_T2_DOWN
                 int "Button T2 DOWN GPIO"
-                default 14
+                default 15
                 range 0 39
                 help
                     GPIO pin for Button T2 DOWN.
     
             config BLINDS_CONTROLLER_BUTTON_T2_UP
                 int "Button T2 UP GPIO"
-                default 15
+                default 14
                 range 0 39
                 help
                     GPIO pin for Button T2 UP.

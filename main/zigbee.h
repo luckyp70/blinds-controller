@@ -75,15 +75,31 @@
  *
  * Configures a Zigbee end device with appropriate settings
  */
-#define ESP_ZB_ZED_CONFIG()                               \
-    {                                                     \
-        .esp_zb_role = ZB_ROLE,                           \
-        .install_code_policy = INSTALLCODE_POLICY_ENABLE, \
-        .nwk_cfg.zed_cfg = {                              \
-            .ed_timeout = ED_AGING_TIMEOUT,               \
-            .keep_alive = ED_KEEP_ALIVE,                  \
-        },                                                \
+// #define ESP_ZB_ZED_CONFIG()   // TODO: Finalize the following macro
+
+#define INSTALLCODE_POLICY_DISABLE 0 // TODO replace in the config below with INSTALLCODE_POLICY_ENABLE
+
+#if CONFIG_BLINDS_CONTROLLER_ZB_ROLE == CONFIG_ZIGBEE_ROLE_ROUTER
+#define ESP_ZB_DEVICE_CONFIG()                                                  \
+    (esp_zb_cfg_t)                                                              \
+    {                                                                           \
+        .esp_zb_role = ZB_ROLE,                                                 \
+        .install_code_policy = INSTALLCODE_POLICY_ENABLE,                       \
+        .nwk_cfg.zczr_cfg = { /* puoi aggiungere parametri router se servono */ \
+        }                                                                       \
     }
+#else
+#define ESP_ZB_DEVICE_CONFIG()                             \
+    (esp_zb_cfg_t)                                         \
+    {                                                      \
+        .esp_zb_role = ZB_ROLE,                            \
+        .install_code_policy = INSTALLCODE_POLICY_DISABLE, \
+        .nwk_cfg.zed_cfg = {                               \
+            .ed_timeout = ED_AGING_TIMEOUT,                \
+            .keep_alive = ED_KEEP_ALIVE                    \
+        }                                                  \
+    }
+#endif
 
 /**
  * @brief Default radio configuration macro

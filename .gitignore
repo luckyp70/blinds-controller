@@ -39,3 +39,4 @@ core
 # Managed components
 managed_components/
 
+docs/*.bkp

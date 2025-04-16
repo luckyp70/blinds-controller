@@ -196,7 +196,7 @@ static esp_err_t zb_action_handler(esp_zb_core_action_callback_id_t callback_id,
 static void esp_zb_task(void *pvParameters)
 {
     /* Initialize Zigbee stack */
-    esp_zb_cfg_t zb_nwk_cfg = ESP_ZB_ZED_CONFIG();
+    esp_zb_cfg_t zb_nwk_cfg = ESP_ZB_DEVICE_CONFIG();
     esp_zb_init(&zb_nwk_cfg);
 
     /* Configure Window Covering cluster */
