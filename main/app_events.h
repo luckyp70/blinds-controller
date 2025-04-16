@@ -28,6 +28,17 @@ typedef enum app_event_id_t
 } app_event_id_t;
 
 /**
+ * @brief Get the string name of an app_event_id_t.
+ *
+ * This function returns a human-readable string corresponding to the given
+ * app_event_id_t value. Useful for logging and debugging.
+ *
+ * @param event_id The event ID.
+ * @return The string name of the event, or "UNKNOWN_EVENT" if not recognized.
+ */
+const char *app_event_id_to_str(app_event_id_t event_id);
+
+/**
  * @brief Initialize the application event system and create the event loop.
  */
 esp_err_t app_event_init(void);

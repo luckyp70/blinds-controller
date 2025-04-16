@@ -61,8 +61,8 @@ esp_err_t app_event_register(app_event_id_t event_id, esp_event_handler_t event_
             event_handler,
             event_handler_arg),
         TAG,
-        "Failed to register event handler for the topic %d@APP_EVENT", event_id);
-    ESP_LOGI(TAG, "Event handler registered for event %d@APP_EVENT", event_id);
+        "Failed to register event handler for the topic %s", app_event_id_to_str(event_id));
+    ESP_LOGI(TAG, "Event handler registered for event %s", app_event_id_to_str(event_id));
 
     return ESP_OK;
 }
@@ -86,8 +86,48 @@ esp_err_t app_event_post(app_event_id_t event_id, const void *event_data, size_t
             event_data,
             event_data_size,
             portMAX_DELAY),
-        TAG, "Failed to post event %d@APP_EVENT", event_id);
-    ESP_LOGI(TAG, "Event %d@APP_EVENT posted successfully", event_id);
+        TAG, "Failed to post event %s", app_event_id_to_str(event_id));
+    ESP_LOGI(TAG, "Event %s posted successfully", app_event_id_to_str(event_id));
 
     return ESP_OK;
+}
+
+/**
+ * @brief Converts an application event ID to its string representation.
+ *
+ * This function returns a human-readable string corresponding to the given
+ * app_event_id_t value. Useful for logging and debugging.
+ *
+ * @param event_id The event ID to convert.
+ * @return The string name of the event, or "UNKNOWN_EVENT" if not recognized.
+ */
+const char *app_event_id_to_str(app_event_id_t event_id)
+{
+    switch (event_id)
+    {
+    case APP_EVENT_NONE:
+        return "APP_EVENT_NONE";
+    case APP_EVENT_BLIND_OPENING:
+        return "APP_EVENT_BLIND_OPENING";
+    case APP_EVENT_BLIND_CLOSING:
+        return "APP_EVENT_BLIND_CLOSING";
+    case APP_EVENT_BLIND_STOPPING:
+        return "APP_EVENT_BLIND_STOPPING";
+    case APP_EVENT_BLIND_STOPPED:
+        return "APP_EVENT_BLIND_STOPPED";
+    case APP_EVENT_BLIND_STOPPED_ON_LIMIT:
+        return "APP_EVENT_BLIND_STOPPED_ON_LIMIT";
+    case APP_EVENT_BLIND_STOPPED_ON_SAFETY_LIMIT:
+        return "APP_EVENT_BLIND_STOPPED_ON_SAFETY_LIMIT";
+    case APP_EVENT_BLIND_CHANGING_POSITION:
+        return "APP_EVENT_BLIND_CHANGING_POSITION";
+    case APP_EVENT_BLIND_POSITION_SET:
+        return "APP_EVENT_BLIND_POSITION_SET";
+    case APP_EVENT_BLIND_CALIBRATING:
+        return "APP_EVENT_BLIND_CALIBRATING";
+    case APP_EVENT_BLIND_CALIBRATED:
+        return "APP_EVENT_BLIND_CALIBRATED";
+    default:
+        return "UNKNOWN_EVENT";
+    }
 }

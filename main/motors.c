@@ -132,7 +132,9 @@ void motor_up(motor_id_t motor_id)
 {
     ESP_LOGI(TAG, "Moving motor %d up", motor_id);
     portENTER_CRITICAL(&motor_mux);
-    motors_set_direction(motor_id, true, false); // Set IN1 high and IN2 low
+    motors_set_direction(motor_id, false, false); // Stop the motor for a moment
+    vTaskDelay(pdMS_TO_TICKS(500));               // Wait for a moment to ensure the motor stops
+    motors_set_direction(motor_id, true, false);  // Set IN1 high and IN2 low
     motor_states[motor_id] = MOTOR_MOVING_UP;
     portEXIT_CRITICAL(&motor_mux);
 
@@ -148,7 +150,9 @@ void motor_down(motor_id_t motor_id)
 {
     ESP_LOGI(TAG, "Moving motor %d down", motor_id);
     portENTER_CRITICAL(&motor_mux);
-    motors_set_direction(motor_id, false, true); // Set IN1 low and IN2 high
+    motors_set_direction(motor_id, false, false); // Stop the motor for a moment
+    vTaskDelay(pdMS_TO_TICKS(500));               // Wait for a moment to ensure the motor stops
+    motors_set_direction(motor_id, false, true);  // Set IN1 low and IN2 high
     motor_states[motor_id] = MOTOR_MOVING_DOWN;
     portEXIT_CRITICAL(&motor_mux);
 
@@ -226,6 +230,12 @@ static void motors_set_direction(motor_id_t motor_id, bool in1_level, bool in2_l
 static void motor_timeout_callback(TimerHandle_t xTimer)
 {
     motor_id_t motor_id = (motor_id_t)(uintptr_t)pvTimerGetTimerID(xTimer); // Retrieve motor ID from timer
+
+    if (motor_states[motor_id] == MOTOR_STOPPED)
+    {
+        return; // If the motor is already stopped, do nothing
+    }
+
     ESP_LOGI(TAG, "Motor %d timed out — stopping", motor_id);
     motor_stop(motor_id); // Stop the motor
 
