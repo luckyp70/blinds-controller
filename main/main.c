@@ -22,22 +22,24 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
- *
- * Author: Fortunato Pasqualone
- * Date: April 13, 2025
- */
+
+     __               __
+    / /   __  _______/ /____  ______
+   / /   / / / / ___/ //_/ / / / __ \
+  / /___/ /_/ / /__/ ,< / /_/ / /_/ /
+ /_____/\__,_/\___/_/|_|\__, / .___/
+                      /____/_/
+
+*/
 
 #include <stdio.h>
-// #include <inttypes.h>
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
-// #include "freertos/task.h"
-// #include "esp_chip_info.h"
-// #include "esp_flash.h"
-// #include "esp_system.h"
+
 #include "nvs_flash.h"
 #include "esp_log.h"
 
+#include "app_events.h"
 #include "motors.h"
 #include "buttons.h"
 #include "zigbee.h"
@@ -52,6 +54,8 @@ void app_main(void)
     ESP_ERROR_CHECK(nvs_flash_init());
 
     // Initialize modules
+    ESP_ERROR_CHECK(app_event_init());
+
     motors_init();
     buttons_init();
     zigbee_init();

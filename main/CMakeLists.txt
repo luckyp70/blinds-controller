@@ -5,6 +5,7 @@ idf_component_register(
         "buttons.c"
         "zigbee.c"
         "blinds.c"
+       "app_events.c"
         "zcl_utility/src/zcl_utility.c"
 
     PRIV_REQUIRES 
