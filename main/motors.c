@@ -1,6 +1,10 @@
 /**
  * @file motors.c
- * @brief Implementation of motor control functionality for blinds controller
+ * @brief Implementation of motor control functionality for blinds controller.
+ *
+ * This file contains the implementation for controlling two DC motors via H-Bridge drivers
+ * for a smart blinds controller. It provides initialization, direction control, safety timeout,
+ * and event-driven operation for opening, closing, and stopping blinds.
  */
 #include "motors.h"
 #include "app_events.h"
@@ -92,6 +96,11 @@ static void blind_stopping_event_handler(void *arg, esp_event_base_t event_base,
 
 /**
  * @brief Initializes the motor driver pins and sets their initial state.
+ *
+ * Configures the GPIO pins for both motors as outputs and sets them to a safe initial state.
+ * Registers event handlers for blind open, close, and stop events.
+ *
+ * @return ESP_OK on success, or an error code from the ESP-IDF API.
  */
 esp_err_t motors_init(void)
 {
@@ -109,7 +118,6 @@ esp_err_t motors_init(void)
         // Configure the GPIO pins for the motor
         ESP_RETURN_ON_ERROR(gpio_config(&io_conf), TAG, "Failed to configure GPIO pins for motor %d", i);
 
-        // motor_stop(i);                         // Set initial state of motors to low
         motors_set_direction(i, false, false); // Set both IN1 and IN2 low
     }
     ESP_LOGI(TAG, "Motor driver pins initialized.");
@@ -125,6 +133,9 @@ esp_err_t motors_init(void)
 
 /**
  * @brief Moves the specified motor up (open blinds).
+ *
+ * Stops the motor briefly before setting the direction to up (IN1 high, IN2 low),
+ * and starts the safety timeout timer.
  *
  * @param motor_id The ID of the motor to move up.
  */

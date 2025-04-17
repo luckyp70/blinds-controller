@@ -27,6 +27,21 @@
  * Date: April 15, 2025
  */
 
+/*
+ * =====================================================================================
+ * | Events Table                                                                      |
+ * =====================================================================================
+ * | Type     | Event ID                                | Description                  |
+ * |----------|-----------------------------------------|------------------------------|
+ * | Handled  | APP_EVENT_BLIND_OPENING                 | Blind opening                |
+ * | Handled  | APP_EVENT_BLIND_CLOSING                 | Blind closing                |
+ * | Handled  | APP_EVENT_BLIND_STOPPING                | Blind stopping               |
+ * | Emitted  | APP_EVENT_BLIND_STOPPED                 | Blind has stopped            |
+ * | Emitted  | APP_EVENT_BLIND_STOPPED_ON_SAFETY_LIMIT | Stopped on safety limit      |
+ * =====================================================================================
+ * This module handles and emits the above events to control and report motor actions.
+ */
+
 /**
  * @file motors.h
  * @brief Motor control interface for blinds controller
