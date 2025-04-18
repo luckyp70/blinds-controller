@@ -4,12 +4,12 @@
  */
 #include "buttons.h"
 #include "app_events.h"
-#include "motors.h"
+#include "blinds.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
-#include "esp_err.h"
+#include "esp_check.h"
 #include "sdkconfig.h"
 
 static const char *TAG = "BUTTONS";
@@ -36,11 +36,11 @@ static const gpio_num_t button_gpios[BUTTON_COUNT] = {
 /**
  * @brief Motor mapping for each button
  */
-static const motor_id_t button_to_motor[BUTTON_COUNT] = {
-    [BUTTON_T1_UP_ID] = MOTOR_1,
-    [BUTTON_T1_DOWN_ID] = MOTOR_1,
-    [BUTTON_T2_UP_ID] = MOTOR_2,
-    [BUTTON_T2_DOWN_ID] = MOTOR_2,
+static const blind_id_t button_to_blind[BUTTON_COUNT] = {
+    [BUTTON_T1_UP_ID] = BLIND_1,
+    [BUTTON_T1_DOWN_ID] = BLIND_1,
+    [BUTTON_T2_UP_ID] = BLIND_2,
+    [BUTTON_T2_DOWN_ID] = BLIND_2,
 };
 
 /* Timers for button debounce handling */
@@ -69,10 +69,10 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
 }
 
 /**
- * @brief Callback function for button debounce timer
+ * @brief Debounce timer callback for button press validation
  *
- * Verifies the button state after debounce period and triggers
- * the appropriate motor action if button is still pressed.
+ * After the debounce period, checks if the button is still pressed and posts the appropriate
+ * event (open, close, or stop) for the corresponding blind. Also manages re-enabling the ISR.
  *
  * @param xTimer Timer handle that triggered this callback
  */
@@ -89,24 +89,24 @@ static void debounce_timer_callback(TimerHandle_t xTimer)
     {
         ESP_LOGI(TAG, "Button %d pressed", button_id);
 
-        /* Use the button_to_motor map to determine the motor */
-        motor_id_t motor_id = button_to_motor[button_id];
+        /* Use the button_to_blind map to determine the blind */
+        blind_id_t blind_id = button_to_blind[button_id];
         bool is_up = (button_id == BUTTON_T1_UP_ID || button_id == BUTTON_T2_UP_ID);
 
         app_event_id_t event_id;
-        motor_state_t motor_state = motor_get_state(motor_id);
+        blind_motion_state_t blind_motion_state = blinds_get_motion_state(blind_id);
 
-        // Please notice: since there is no physical stop button, we stop the motor
-        // when a button is pressed again while the motor is moving in the direction of the button.
+        // If the blind is already moving in the requested direction, treat as a stop command.
+        // Otherwise, treat as an open/close command depending on direction.
         if (is_up)
         {
-            event_id = (motor_state == MOTOR_MOVING_UP) ? APP_EVENT_BLIND_STOPPING : APP_EVENT_BLIND_OPENING;
+            event_id = (blind_motion_state == BLIND_MOTION_STATE_MOVING_UP) ? APP_EVENT_BLIND_STOPPING : APP_EVENT_BLIND_OPENING;
         }
         else
         {
-            event_id = (motor_state == MOTOR_MOVING_DOWN) ? APP_EVENT_BLIND_STOPPING : APP_EVENT_BLIND_CLOSING;
+            event_id = (blind_motion_state == BLIND_MOTION_STATE_MOVING_DOWN) ? APP_EVENT_BLIND_STOPPING : APP_EVENT_BLIND_CLOSING;
         }
-        app_event_post(event_id, &motor_id, sizeof(motor_id));
+        app_event_post(event_id, &blind_id, sizeof(blind_id));
     }
 
     // Riabilita l'interrupt del pulsante dopo il debounce
@@ -116,11 +116,12 @@ static void debounce_timer_callback(TimerHandle_t xTimer)
 /**
  * @brief Initialize button handling functionality
  *
- * Configures GPIO pins, creates debounce timers and installs ISR handlers
+ * Configures GPIO pins, creates debounce timers, and installs ISR handlers
  * for all buttons used in the blinds controller.
  *
+ * @return ESP_OK on success, error code otherwise
  */
-void buttons_init(void)
+esp_err_t buttons_init(void)
 {
     ESP_LOGI(TAG, "Initializing buttons...");
 
@@ -141,20 +142,22 @@ void buttons_init(void)
     for (int i = 0; i < BUTTON_COUNT; i++)
     {
         io_conf.pin_bit_mask = (1ULL << button_gpios[i]);
-        gpio_config(&io_conf);
+        ESP_RETURN_ON_ERROR(gpio_config(&io_conf), TAG, "Failed to configure GPIO %d", button_gpios[i]);
 
         // Crea il timer di debounce
         debounce_timers[i] = xTimerCreate("debounce_timer", pdMS_TO_TICKS(DEBOUNCE_TIME_MS), pdFALSE, (void *)(intptr_t)i, debounce_timer_callback);
     }
 
     /* Install ISR service */
-    ESP_ERROR_CHECK(gpio_install_isr_service(0));
+    ESP_RETURN_ON_ERROR(gpio_install_isr_service(0), TAG, "Failed to install ISR service");
 
     /* Add ISR handlers for each button */
     for (int i = 0; i < BUTTON_COUNT; i++)
     {
-        gpio_isr_handler_add(button_gpios[i], gpio_isr_handler, (void *)i);
+        ESP_RETURN_ON_ERROR(gpio_isr_handler_add(button_gpios[i], gpio_isr_handler, (void *)i), TAG, "Failed to add ISR handler for GPIO %d", button_gpios[i]);
     }
 
     ESP_LOGI(TAG, "Buttons initialized.");
+
+    return ESP_OK;
 }

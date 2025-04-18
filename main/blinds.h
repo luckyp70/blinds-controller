@@ -18,6 +18,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "esp_err.h"
 
 /**
  * @brief Blind identifiers
@@ -38,9 +39,9 @@ typedef enum
  */
 typedef enum
 {
-    BLIND_STATE_IDLE,       /**< Blind is not moving */
-    BLIND_STATE_MOVING_UP,  /**< Blind is moving upward */
-    BLIND_STATE_MOVING_DOWN /**< Blind is moving downward */
+    BLIND_MOTION_STATE_IDLE,       /**< Blind is not moving */
+    BLIND_MOTION_STATE_MOVING_UP,  /**< Blind is moving upward */
+    BLIND_MOTION_STATE_MOVING_DOWN /**< Blind is moving downward */
 } blind_motion_state_t;
 
 /**
@@ -50,10 +51,12 @@ typedef enum
  */
 typedef struct
 {
-    uint8_t current_position;    /**< Current position (0 = fully closed, 100 = fully open) */
-    uint8_t target_position;     /**< Target position to move to */
-    blind_motion_state_t motion; /**< Current motion state */
-    bool calibrated;             /**< Whether the blind has been calibrated */
+    uint8_t current_position;          /**< Current position (0 = fully closed, 100 = fully open) */
+    uint8_t target_position;           /**< Target position to move to */
+    blind_motion_state_t motion_state; /**< Current motion state */
+    uint32_t full_opening_duration;    /**< Duration of the movement in milliseconds */
+    uint32_t full_closing_duration;    /**< Duration of the movement in milliseconds */
+    bool calibrated;                   /**< Whether the blind has been calibrated */
 } blind_t;
 
 /**
@@ -61,7 +64,11 @@ typedef struct
  *
  * Sets up initial state and required hardware for all blinds
  */
-void blinds_init(void);
+esp_err_t blinds_init(void);
+
+void blinds_open(blind_id_t blind_id);
+
+void blinds_close(blind_id_t blind_id);
 
 /**
  * @brief Set target position for a specific blind
@@ -69,7 +76,7 @@ void blinds_init(void);
  * @param blind_id Which blind to control
  * @param position_percent Target position (0-100%)
  */
-void blinds_set_target_position(blind_id_t blind_id, uint8_t position_percent);
+void blinds_move_to_position(blind_id_t blind_id, uint8_t target_position);
 
 /**
  * @brief Stop movement of a specific blind
@@ -78,14 +85,7 @@ void blinds_set_target_position(blind_id_t blind_id, uint8_t position_percent);
  */
 void blinds_stop(blind_id_t blind_id);
 
-/**
- * @brief Process button events for blind control
- *
- * @param blind_id Which blind is associated with these buttons
- * @param up_pressed Whether the up button is pressed
- * @param down_pressed Whether the down button is pressed
- */
-void blinds_handle_button_event(blind_id_t blind_id, bool up_pressed, bool down_pressed);
+blind_motion_state_t blinds_get_motion_state(blind_id_t blind_id);
 
 /**
  * @brief Force calibration of a blind to a known position

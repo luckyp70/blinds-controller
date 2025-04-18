@@ -49,17 +49,16 @@ static const char *TAG = "MAIN";
 
 void app_main(void)
 {
-    ESP_LOGI(TAG, "Starting ESP32 Blinds Controller...");
+    ESP_LOGI(TAG, "Starting the Blinds Controller...");
 
     ESP_ERROR_CHECK(nvs_flash_init());
 
     // Initialize modules
     ESP_ERROR_CHECK(app_event_init());
     ESP_ERROR_CHECK(motors_init());
-
-    buttons_init();
+    ESP_ERROR_CHECK(buttons_init());
     zigbee_init();
-    blinds_init();
+    ESP_ERROR_CHECK(blinds_init());
 
     while (true)
     {

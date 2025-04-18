@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include "esp_err.h"
+
 /**
  * @brief Button identifiers
  *
@@ -35,4 +37,4 @@ typedef enum
  *
  * Sets up GPIO pins, interrupts, and debounce logic for all buttons
  */
-void buttons_init(void);
+esp_err_t buttons_init(void);
