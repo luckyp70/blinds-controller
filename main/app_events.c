@@ -1,3 +1,10 @@
+/**
+ * @file app_events.c
+ * @brief Application event system implementation for blinds controller.
+ *
+ * Provides event registration, posting, and dispatching for application-level events.
+ */
+
 #include "app_events.h"
 #include "esp_log.h"
 #include "esp_check.h"
@@ -87,7 +94,7 @@ esp_err_t app_event_post(app_event_id_t event_id, const void *event_data, size_t
             event_data_size,
             portMAX_DELAY),
         TAG, "Failed to post event %s", app_event_id_to_str(event_id));
-    ESP_LOGI(TAG, "Event %s posted successfully", app_event_id_to_str(event_id));
+    // ESP_LOGI(TAG, "Event %s posted successfully", app_event_id_to_str(event_id));
 
     return ESP_OK;
 }
@@ -119,10 +126,10 @@ const char *app_event_id_to_str(app_event_id_t event_id)
         return "APP_EVENT_BLIND_STOPPED_ON_LIMIT";
     case APP_EVENT_BLIND_STOPPED_ON_SAFETY_LIMIT:
         return "APP_EVENT_BLIND_STOPPED_ON_SAFETY_LIMIT";
-    case APP_EVENT_BLIND_CHANGING_POSITION:
-        return "APP_EVENT_BLIND_CHANGING_POSITION";
-    case APP_EVENT_BLIND_POSITION_SET:
-        return "APP_EVENT_BLIND_POSITION_SET";
+    case APP_EVENT_BLIND_UPDATING_POSITION:
+        return "APP_EVENT_BLIND_UPDATING_POSITION";
+    case APP_EVENT_BLIND_POSITION_UPDATED:
+        return "APP_EVENT_BLIND_POSITION_UPDATED";
     case APP_EVENT_BLIND_CALIBRATING:
         return "APP_EVENT_BLIND_CALIBRATING";
     case APP_EVENT_BLIND_CALIBRATED:

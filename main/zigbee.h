@@ -14,6 +14,19 @@
  * of window coverings, implementing standard ZCL clusters.
  */
 
+/*
+ * Emitted & Handled Events Recap:
+ *
+ * | Event Name                       | Emitted | Handled | Description                                 |
+ * |-----------------------------------|---------|---------|---------------------------------------------|
+ * | APP_EVENT_BLIND_OPENING           |   Yes   |   No    | Zigbee command to open the blind            |
+ * | APP_EVENT_BLIND_CLOSING           |   Yes   |   No    | Zigbee command to close the blind           |
+ * | APP_EVENT_BLIND_STOPPING          |   Yes   |   No    | Zigbee command to stop the blind            |
+ * | APP_EVENT_BLIND_UPDATING_POSITION |   Yes   |   No    | Zigbee command to move to a specific position|
+ *
+ * "Emitted" means the module posts the event. "Handled" means the module provides a handler for the event.
+ */
+
 #pragma once
 
 #include "esp_zigbee_core.h"
@@ -52,7 +65,12 @@
 /**
  * @brief Window covering endpoint for ZCL commands
  */
-#define HA_ESP_WINDOW_COVERING_ENDPOINT 0x0A
+#define BLINDS_WINDOW_COVERING_ENDPOINT_A 0x0A
+#define BLINDS_WINDOW_COVERING_ENDPOINT_B 0x0B
+
+#define MANUFACTURER_NAME "\x09" \
+                          "ESPRESSIF"
+#define MODEL_IDENTIFIER "\x07" CONFIG_IDF_TARGET
 
 /**
  * @brief Channel mask for Zigbee radio
@@ -75,10 +93,6 @@
  *
  * Configures a Zigbee end device with appropriate settings
  */
-// #define ESP_ZB_ZED_CONFIG()   // TODO: Finalize the following macro
-
-#define INSTALLCODE_POLICY_DISABLE 0 // TODO replace in the config below with INSTALLCODE_POLICY_ENABLE
-
 #if CONFIG_BLINDS_CONTROLLER_ZB_ROLE == CONFIG_ZIGBEE_ROLE_ROUTER
 #define ESP_ZB_DEVICE_CONFIG()                                                  \
     (esp_zb_cfg_t)                                                              \
@@ -89,15 +103,15 @@
         }                                                                       \
     }
 #else
-#define ESP_ZB_DEVICE_CONFIG()                             \
-    (esp_zb_cfg_t)                                         \
-    {                                                      \
-        .esp_zb_role = ZB_ROLE,                            \
-        .install_code_policy = INSTALLCODE_POLICY_DISABLE, \
-        .nwk_cfg.zed_cfg = {                               \
-            .ed_timeout = ED_AGING_TIMEOUT,                \
-            .keep_alive = ED_KEEP_ALIVE                    \
-        }                                                  \
+#define ESP_ZB_DEVICE_CONFIG()                            \
+    (esp_zb_cfg_t)                                        \
+    {                                                     \
+        .esp_zb_role = ZB_ROLE,                           \
+        .install_code_policy = INSTALLCODE_POLICY_ENABLE, \
+        .nwk_cfg.zed_cfg = {                              \
+            .ed_timeout = ED_AGING_TIMEOUT,               \
+            .keep_alive = ED_KEEP_ALIVE                   \
+        }                                                 \
     }
 #endif
 
@@ -126,4 +140,4 @@
  *
  * Sets up the Zigbee networking, endpoints, and clusters
  */
-void zigbee_init(void);
+esp_err_t zigbee_init(void);

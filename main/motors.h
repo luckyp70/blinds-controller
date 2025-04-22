@@ -28,18 +28,17 @@
  */
 
 /*
- * =====================================================================================
- * | Events Table                                                                      |
- * =====================================================================================
- * | Type     | Event ID                                | Description                  |
- * |----------|-----------------------------------------|------------------------------|
- * | Handled  | APP_EVENT_BLIND_OPENING                 | Blind opening                |
- * | Handled  | APP_EVENT_BLIND_CLOSING                 | Blind closing                |
- * | Handled  | APP_EVENT_BLIND_STOPPING                | Blind stopping               |
- * | Emitted  | APP_EVENT_BLIND_STOPPED                 | Blind has stopped            |
- * | Emitted  | APP_EVENT_BLIND_STOPPED_ON_SAFETY_LIMIT | Stopped on safety limit      |
- * =====================================================================================
- * This module handles and emits the above events to control and report motor actions.
+ * Emitted & Handled Events Recap:
+ *
+ * | Event Name                              | Emitted | Handled | Description                       |
+ * |-----------------------------------------|---------|---------|-----------------------------------|
+ * | APP_EVENT_BLIND_OPENING                 |   No    |   Yes   | Command to open the blind         |
+ * | APP_EVENT_BLIND_CLOSING                 |   No    |   Yes   | Command to close the blind        |
+ * | APP_EVENT_BLIND_STOPPING                |   No    |   Yes   | Command to stop the blind         |
+ * | APP_EVENT_BLIND_STOPPED                 |   Yes   |   No    | Blind has stopped                 |
+ * | APP_EVENT_BLIND_STOPPED_ON_SAFETY_LIMIT |   Yes   |   No    | Blind stopped on safety limit     |
+ *
+ * "Emitted" means the module posts the event. "Handled" means the module provides a handler for the event.
  */
 
 /**

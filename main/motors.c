@@ -41,27 +41,9 @@ static TimerHandle_t motor_timers[2] = {NULL, NULL};
 
 static portMUX_TYPE motor_mux = portMUX_INITIALIZER_UNLOCKED;
 
-/**
- * @brief Set the direction of the motor by configuring GPIO levels.
- *
- * @param motor_id The ID of the motor to configure.
- * @param in1_level The level to set for the IN1 pin.
- * @param in2_level The level to set for the IN2 pin.
- */
+/* Static function declarations */
 static void motors_set_direction(motor_id_t motor, bool in1_level, bool in2_level);
-
-/**
- * @brief Start or reset the timeout timer for the specified motor.
- *
- * @param motor_id The ID of the motor to start the timer for.
- */
 static void motor_start_timeout_timer(motor_id_t motor_id);
-
-/**
- * @brief Stop the timeout timer for the specified motor.
- *
- * @param motor_id The ID of the motor to stop the timer for.
- */
 static void motor_stop_safety_timeout_timer(motor_id_t motor_id);
 
 /**
@@ -92,7 +74,7 @@ esp_err_t motors_init(void)
     }
     ESP_LOGI(TAG, "Motor driver pins initialized.");
 
-    // Register event handlers for motor events
+    // Event handler registration commented out for now. Add back if/when event-driven control is implemented.
     // ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_OPENING, &blind_opening_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_OPENING");
     // ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_CLOSING, &blind_closing_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_CLOSING");
     // ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_STOPPING, &blind_stopping_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_STOPPING");
@@ -111,7 +93,6 @@ esp_err_t motors_init(void)
  */
 void motor_up(motor_id_t motor_id)
 {
-    // ESP_LOGI(TAG, "Moving motor %d up", motor_id);
     portENTER_CRITICAL(&motor_mux);
     motors_set_direction(motor_id, false, false); // Stop the motor for a moment
     vTaskDelay(pdMS_TO_TICKS(500));               // Wait for a moment to ensure the motor stops
@@ -129,7 +110,6 @@ void motor_up(motor_id_t motor_id)
  */
 void motor_down(motor_id_t motor_id)
 {
-    // ESP_LOGI(TAG, "Moving motor %d down", motor_id);
     portENTER_CRITICAL(&motor_mux);
     motors_set_direction(motor_id, false, false); // Stop the motor for a moment
     vTaskDelay(pdMS_TO_TICKS(500));               // Wait for a moment to ensure the motor stops
@@ -147,7 +127,6 @@ void motor_down(motor_id_t motor_id)
  */
 void motor_stop(motor_id_t motor_id)
 {
-    // ESP_LOGI(TAG, "Stopping motor %d", motor_id);
     portENTER_CRITICAL(&motor_mux);
     motors_set_direction(motor_id, false, false); // Set both IN1 and IN2 low
     motor_states[motor_id] = MOTOR_STOPPED;

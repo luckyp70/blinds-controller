@@ -20,8 +20,8 @@ typedef enum app_event_id_t
     APP_EVENT_BLIND_STOPPED,                 /**< Blind has stopped */
     APP_EVENT_BLIND_STOPPED_ON_LIMIT,        /**< Blind stopped on limit */
     APP_EVENT_BLIND_STOPPED_ON_SAFETY_LIMIT, /**< Blind stopped on safety limit */
-    APP_EVENT_BLIND_CHANGING_POSITION,       /**< Blind is changing position */
-    APP_EVENT_BLIND_POSITION_SET,            /**< Blind position set */
+    APP_EVENT_BLIND_UPDATING_POSITION,       /**< Blind is updating its position */
+    APP_EVENT_BLIND_POSITION_UPDATED,        /**< Blind position updated */
     APP_EVENT_BLIND_CALIBRATING,             /**< Blind is calibrating */
     APP_EVENT_BLIND_CALIBRATED,              /**< Blind has been calibrated */
 

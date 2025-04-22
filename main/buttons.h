@@ -6,6 +6,18 @@
  * This file is part of the ESP32 Blinds Controller project.
  */
 
+/*
+ * Emitted & Handled Events Recap:
+ *
+ * | Event Name               | Emitted | Handled | Description                        |
+ * |--------------------------|---------|---------|------------------------------------|
+ * | APP_EVENT_BLIND_OPENING  |   Yes   |   No    | Button triggers blind opening      |
+ * | APP_EVENT_BLIND_CLOSING  |   Yes   |   No    | Button triggers blind closing      |
+ * | APP_EVENT_BLIND_STOPPING |   Yes   |   No    | Button triggers blind stopping     |
+ *
+ * "Emitted" means the module posts the event. "Handled" means the module provides a handler for the event.
+ */
+
 /**
  * @file buttons.h
  * @brief Button interface for the ESP32 blinds controller

@@ -57,7 +57,7 @@ void app_main(void)
     ESP_ERROR_CHECK(app_event_init());
     ESP_ERROR_CHECK(motors_init());
     ESP_ERROR_CHECK(buttons_init());
-    zigbee_init();
+    ESP_ERROR_CHECK(zigbee_init());
     ESP_ERROR_CHECK(blinds_init());
 
     while (true)
