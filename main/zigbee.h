@@ -78,17 +78,6 @@
 #define ESP_ZB_PRIMARY_CHANNEL_MASK ESP_ZB_TRANSCEIVER_ALL_CHANNELS_MASK /* Zigbee primary channel mask use in the example */
 
 /**
- * @brief Manufacturer name for basic cluster
- */
-#define ESP_MANUFACTURER_NAME "\x09" \
-                              "ESPRESSIF" /* Customized manufacturer name */
-
-/**
- * @brief Model identifier for basic cluster
- */
-#define ESP_MODEL_IDENTIFIER "\x07" CONFIG_IDF_TARGET /* Customized model identifier */
-
-/**
  * @brief Zigbee end device configuration macro
  *
  * Configures a Zigbee end device with appropriate settings

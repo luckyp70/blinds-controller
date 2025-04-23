@@ -25,25 +25,29 @@
 
 static const char *TAG = "ZIGBEE";
 
+// Structure for Zigbee string attributes (ZCL CHAR_STRING)
 typedef struct zbstring_s
 {
-    uint8_t len;
-    char data[];
+    uint8_t len; // Length of the string
+    char data[]; // String data (not null-terminated)
 } ESP_ZB_PACKED_STRUCT
     zbstring_t;
 
+// Structure to hold discovered window covering device parameters
 typedef struct window_cover_device_params_s
 {
-    esp_zb_ieee_addr_t ieee_addr;
-    uint8_t endpoint;
-    uint16_t short_addr;
+    esp_zb_ieee_addr_t ieee_addr; // IEEE (MAC) address of the device
+    uint8_t endpoint;             // Zigbee endpoint
+    uint16_t short_addr;          // 16-bit network address
 } window_cover_device_params_t;
 
+// Global variable to store the currently discovered window covering device
 window_cover_device_params_t window_cover_device;
 
-static uint8_t current_position_lift_percentage = 0;
+// Current lift percentage for the window covering (0-100)
+static uint8_t current_position_lift_percentage = FULLY_OPEN_POSITION;
 
-/* Static function declarations */
+/** Static function declarations */
 static void blind_position_change_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 
 /**
@@ -53,6 +57,7 @@ static void blind_position_change_event_handler(void *arg, esp_event_base_t even
  */
 static void bdb_start_top_level_commissioning_cb(uint8_t mode_mask)
 {
+    // Start Zigbee commissioning with the given mode mask
     ESP_RETURN_VOID_ON_FALSE(esp_zb_bdb_start_top_level_commissioning(mode_mask) == ESP_OK, TAG, "Failed to start Zigbee commissioning");
 }
 
@@ -96,12 +101,11 @@ static void bind_cb(esp_zb_zdp_status_t zdo_status, void *user_ctx)
             ESP_LOGI(TAG, "The window cover device from address(0x%x) on endpoint(%d) successfully binds us",
                      window_cover_device.short_addr, window_cover_device.endpoint);
         }
-        free(bind_req);
+        free(bind_req); // Free memory allocated for binding request
     }
     else
     {
         /* Bind failed, maybe retry the binding ? */
-
         // esp_zb_zdo_device_bind_req(bind_req, bind_cb, bind_req);
     }
 }
@@ -126,7 +130,7 @@ static void user_find_cb(esp_zb_zdp_status_t zdo_status, uint16_t peer_addr, uin
         esp_zb_ieee_address_by_short(device->short_addr, device->ieee_addr);
 
         /* 1. Send binding request to the sensor */
-        esp_zb_zdo_bind_req_param_t *bind_req = (esp_zb_zdo_bind_req_param_t *)calloc(sizeof(esp_zb_zdo_bind_req_param_t), 1);
+        esp_zb_zdo_bind_req_param_t *bind_req = (esp_zb_zdo_bind_req_param_t *)calloc(1, sizeof(esp_zb_zdo_bind_req_param_t));
         bind_req->req_dst_addr = peer_addr;
 
         /* populate the src information of the binding */
@@ -143,7 +147,7 @@ static void user_find_cb(esp_zb_zdp_status_t zdo_status, uint16_t peer_addr, uin
         esp_zb_zdo_device_bind_req(bind_req, bind_cb, bind_req);
 
         /* 2. Send binding request to self */
-        bind_req = (esp_zb_zdo_bind_req_param_t *)calloc(sizeof(esp_zb_zdo_bind_req_param_t), 1);
+        bind_req = (esp_zb_zdo_bind_req_param_t *)calloc(1, sizeof(esp_zb_zdo_bind_req_param_t));
         bind_req->req_dst_addr = esp_zb_get_short_address();
 
         /* populate the src information of the binding */
@@ -170,6 +174,7 @@ static void user_find_cb(esp_zb_zdp_status_t zdo_status, uint16_t peer_addr, uin
  */
 static void find_window_cover_device(esp_zb_zdo_match_desc_req_param_t *param, esp_zb_zdo_match_desc_callback_t user_cb, void *user_ctx)
 {
+    // Set up match descriptor request for window covering cluster
     uint16_t cluster_list[] = {ESP_ZB_ZCL_CLUSTER_ID_WINDOW_COVERING};
     param->profile_id = ESP_ZB_AF_HA_PROFILE_ID;
     param->num_in_clusters = 1;
@@ -218,6 +223,7 @@ static void setup_attrib_reporting(void)
     report_cmd.record_number = ARRAY_LENTH(records);
     report_cmd.record_field = records;
 
+    // Lock Zigbee stack for thread safety during reporting configuration
     esp_zb_lock_acquire(portMAX_DELAY);
     esp_zb_zcl_config_report_cmd_req(&report_cmd);
     esp_zb_lock_release();
@@ -239,13 +245,10 @@ static esp_err_t deferred_driver_init(void)
     static bool is_inited = false;
     if (!is_inited)
     {
-        // ESP_RETURN_ON_FALSE(switch_driver_init(button_func_pair, PAIR_SIZE(button_func_pair), esp_app_buttons_handler),
-        //                     ESP_FAIL, TAG, "Failed to initialize switch driver");
-
-        // Initialize the blinds reporting
+        // Initialize the blinds reporting and register event handlers
         setup_attrib_reporting();
 
-        // Event handler registrations
+        // Register event handler for blind position updates
         ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_POSITION_UPDATED, &blind_position_change_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_POSITION_UPDATED");
         ESP_LOGI(TAG, "Event handlers registered.");
 
@@ -275,6 +278,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
     case ESP_ZB_BDB_SIGNAL_DEVICE_REBOOT:
         if (err_status == ESP_OK)
         {
+            // Deferred driver and event handler initialization after Zigbee stack startup
             ESP_LOGI(TAG, "Deferred driver initialization %s", deferred_driver_init() ? "failed" : "successful");
             ESP_LOGI(TAG, "Device started up in%s factory-reset mode", esp_zb_bdb_is_factory_new() ? "" : " non");
             if (esp_zb_bdb_is_factory_new())
@@ -290,6 +294,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
         }
         else
         {
+            // Retry initialization on error
             ESP_LOGW(TAG, "%s failed with status: %s, retrying", esp_zb_zdo_signal_to_string(sig_type),
                      esp_err_to_name(err_status));
             esp_zb_scheduler_alarm((esp_zb_callback_t)bdb_start_top_level_commissioning_cb,
@@ -299,6 +304,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
     case ESP_ZB_BDB_SIGNAL_FORMATION:
         if (err_status == ESP_OK)
         {
+            // Network formation successful, print network info
             esp_zb_ieee_addr_t extended_pan_id;
             esp_zb_get_extended_pan_id(extended_pan_id);
             ESP_LOGI(TAG, "Formed network successfully (Extended PAN ID: %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x, PAN ID: 0x%04hx, Channel:%d, Short Address: 0x%04hx)",
@@ -309,6 +315,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
         }
         else
         {
+            // Retry network formation on error
             ESP_LOGI(TAG, "Restart network formation (status: %s)", esp_err_to_name(err_status));
             esp_zb_scheduler_alarm((esp_zb_callback_t)bdb_start_top_level_commissioning_cb, ESP_ZB_BDB_MODE_NETWORK_FORMATION, 1000);
         }
@@ -320,6 +327,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
         }
         break;
     case ESP_ZB_ZDO_SIGNAL_DEVICE_ANNCE:
+        // Handle device announce: new device joined or rejoined
         dev_annce_params = (esp_zb_zdo_signal_device_annce_params_t *)esp_zb_app_signal_get_params(p_sg_p);
         ESP_LOGI(TAG, "New device commissioned or rejoined (short: 0x%04hx)", dev_annce_params->device_short_addr);
         esp_zb_zdo_match_desc_req_param_t cmd_req;
@@ -330,6 +338,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
     case ESP_ZB_NWK_SIGNAL_PERMIT_JOIN_STATUS:
         if (err_status == ESP_OK)
         {
+            // Log permit join status
             if (*(uint8_t *)esp_zb_app_signal_get_params(p_sg_p))
             {
                 ESP_LOGI(TAG, "Network(0x%04hx) is open for %d seconds", esp_zb_get_pan_id(), *(uint8_t *)esp_zb_app_signal_get_params(p_sg_p));
@@ -341,6 +350,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
         }
         break;
     default:
+        // Log all other Zigbee stack signals
         ESP_LOGI(TAG, "ZDO signal: %s (0x%x), status: %s", esp_zb_zdo_signal_to_string(sig_type), sig_type,
                  esp_err_to_name(err_status));
         break;
@@ -397,37 +407,6 @@ static void esp_app_zb_attribute_handler(uint16_t cluster_id, const esp_zb_zcl_a
             ESP_LOGI(TAG, "Received change request to the unhandled attribute %d for the WINDOW_COVERING cluster. No change performed.", attribute->id);
         }
     }
-
-#if 0
-    /* Temperature Measurement cluster attributes */
-    if (cluster_id == ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT)
-    {
-        if (attribute->id == ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_VALUE_ID &&
-            attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_S16)
-        {
-            int16_t value = attribute->data.value ? *(int16_t *)attribute->data.value : 0;
-            ESP_LOGI(TAG, "Measured Value is %.2f degrees Celsius", zb_s16_to_temperature(value));
-        }
-        if (attribute->id == ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_MIN_VALUE_ID &&
-            attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_S16)
-        {
-            int16_t min_value = attribute->data.value ? *(int16_t *)attribute->data.value : 0;
-            ESP_LOGI(TAG, "Min Measured Value is %.2f degrees Celsius", zb_s16_to_temperature(min_value));
-        }
-        if (attribute->id == ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_MAX_VALUE_ID &&
-            attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_S16)
-        {
-            int16_t max_value = attribute->data.value ? *(int16_t *)attribute->data.value : 0;
-            ESP_LOGI(TAG, "Max Measured Value is %.2f degrees Celsius", zb_s16_to_temperature(max_value));
-        }
-        if (attribute->id == ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_TOLERANCE_ID &&
-            attribute->data.type == ESP_ZB_ZCL_ATTR_TYPE_U16)
-        {
-            uint16_t tolerance = attribute->data.value ? *(uint16_t *)attribute->data.value : 0;
-            ESP_LOGI(TAG, "Tolerance is %.2f degrees Celsius", 1.0 * tolerance / 100);
-        }
-    }
-#endif
 }
 
 /**
@@ -679,10 +658,6 @@ esp_err_t zigbee_init(void)
 
     ESP_LOGI(TAG, "Zigbee stack initialized");
 
-    // // Event handler registrations
-    // ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_POSITION_UPDATED, &blind_position_change_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_POSITION_UPDATED");
-    // ESP_LOGI(TAG, "Event handlers registered.");
-
     return ESP_OK;
 }
 
@@ -718,22 +693,6 @@ static void blind_position_change_event_handler(void *arg, esp_event_base_t even
         ESP_LOGE(TAG, "Failed to set attribute value: %d", report_status);
         return;
     }
-
-#if 0
-    esp_zb_zcl_report_attr_cmd_t report = {
-        .zcl_basic_cmd.src_endpoint = BLINDS_WINDOW_COVERING_ENDPOINT_A,
-        .address_mode = ESP_ZB_APS_ADDR_MODE_DST_ADDR_ENDP_NOT_PRESENT,
-        .clusterID = ESP_ZB_ZCL_CLUSTER_ID_WINDOW_COVERING,
-        .direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_CLI, // verso il client (coordinator)
-        .manuf_specific = 0,                          // Non è un attributo manufacturer specific
-        .dis_defalut_resp = 1,                        // Disabilitiamo default response
-        .manuf_code = 0x0000,                         // se non usi attributi manufacturer specific, lascia 0
-        .attributeID = ESP_ZB_ZCL_ATTR_WINDOW_COVERING_CURRENT_POSITION_LIFT_PERCENTAGE_ID};
-
-    esp_zb_lock_acquire(portMAX_DELAY);
-    esp_zb_zcl_report_attr_cmd_req(&report);
-    esp_zb_lock_release();
-#endif
 
     ESP_LOGI(TAG, "ZCL report successfully sent to ZHA: %d%%", current_position_lift_percentage);
 }
