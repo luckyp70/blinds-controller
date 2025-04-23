@@ -37,6 +37,10 @@
 
 #define FULLY_OPEN_POSITION 0     /**< Fully open position (0% closed) */
 #define FULLY_CLOSED_POSITION 100 /**< Fully closed position (100% closed) */
+#define HALF_CLOSED_POSITION 50   /**< Half closed position (50% closed) */
+
+#define BLIND_OPENING_DEFAULT_DURATION 12000 /**< Default duration for opening a blind (in milliseconds) */
+#define BLIND_CLOSING_DEFAULT_DURATION 12000 /**< Default duration for closing a blind (in milliseconds) */
 
 /**
  * @brief Blind identifiers
