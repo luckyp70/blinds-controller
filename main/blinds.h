@@ -75,11 +75,12 @@ typedef struct blind_position_s
  */
 typedef struct blind_state_s
 {
-    uint8_t current_position;          /**< Current position (0 = fully closed, 100 = fully open) */
+    uint8_t current_position;          /**< Current position (100 = fully closed, 0 = fully open) */
     uint8_t target_position;           /**< Target position to move to */
     blind_motion_state_t motion_state; /**< Current motion state */
     uint32_t full_opening_duration;    /**< Duration of the movement in milliseconds */
     uint32_t full_closing_duration;    /**< Duration of the movement in milliseconds */
+    bool position_known;               /**< Whether the current position is known */
     bool calibrated;                   /**< Whether the blind has been calibrated */
 } blind_state_t;
 

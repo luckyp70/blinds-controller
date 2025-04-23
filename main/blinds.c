@@ -74,6 +74,7 @@ esp_err_t blinds_init(void)
         blinds[i].state.current_position = 0;
         blinds[i].state.target_position = 0;
         blinds[i].state.motion_state = BLIND_MOTION_STATE_IDLE;
+        blinds[i].state.position_known = false;
 
         if (blinds_load_calibration(i) != ESP_OK)
         {
@@ -90,6 +91,8 @@ esp_err_t blinds_init(void)
             pdFALSE,              // one-shot timer
             (void *)(uint32_t)i,  // blind ID as timer ID
             stop_timer_callback);
+        blinds[i].move_start_time = 0;
+        blinds[i].move_start_position = 0;
     }
 
     // Register event handlers
@@ -145,10 +148,56 @@ void blind_move_to_position(blind_id_t blind_id, uint8_t target_position)
 {
     ESP_RETURN_VOID_ON_FALSE(blind_id < BLIND_COUNT, TAG, "Invalid blind ID: %d", blind_id);
     ESP_RETURN_VOID_ON_FALSE(target_position <= 100, TAG, "Invalid position percent: %d", target_position);
-    const blind_state_t *blind_state = &blinds[blind_id].state;
+    blind_state_t *blind_state = &blinds[blind_id].state;
 
     uint32_t duration = 0;
 
+    if (blind_state->position_known)
+    {
+        ESP_LOGI(TAG, "Blind %d has a known position", blind_id);
+        /* Calculate the duration based on the distance to travel */
+        int16_t delta = (int16_t)target_position - (int16_t)blind_state->current_position;
+        if (delta > 0)
+        {
+            motor_down(blind_to_motor[blind_id]);
+            blind_state->motion_state = BLIND_MOTION_STATE_MOVING_DOWN;
+            duration = (delta * blind_state->full_closing_duration) / 100;
+        }
+        else if (delta < 0)
+        {
+            motor_up(blind_to_motor[blind_id]);
+            blind_state->motion_state = BLIND_MOTION_STATE_MOVING_UP;
+            duration = (-delta * blind_state->full_opening_duration) / 100;
+        }
+        else
+        {
+            ESP_LOGI(TAG, "Blind %d already at target position %d%%", blind_id, target_position);
+            return; // Already at target position
+        }
+        blind_state->target_position = target_position;
+    }
+    else
+    {
+        /* Requested target position is ignored apart from being used to determine the direction. */
+        if (target_position >= FULLY_CLOSED_POSITION / 2)
+        {
+            ESP_LOGI(TAG, "Blind %d moving down", blind_id);
+            motor_down(blind_to_motor[blind_id]);
+            blind_state->motion_state = BLIND_MOTION_STATE_MOVING_DOWN;
+            blind_state->target_position = FULLY_CLOSED_POSITION;
+            duration = blind_state->full_closing_duration;
+        }
+        else
+        {
+            ESP_LOGI(TAG, "Blind %d moving up", blind_id);
+            motor_up(blind_to_motor[blind_id]);
+            blind_state->motion_state = BLIND_MOTION_STATE_MOVING_UP;
+            blind_state->target_position = FULLY_OPEN_POSITION;
+            duration = blind_state->full_opening_duration;
+        }
+    }
+
+#if 0
     if (!blind_state->calibrated)
     {
         move_uncalibrated_blind_to_position(blind_id, target_position, &duration);
@@ -157,9 +206,10 @@ void blind_move_to_position(blind_id_t blind_id, uint8_t target_position)
     {
         move_calibrated_blind_to_position(blind_id, target_position, &duration);
     }
+#endif
 
     blinds[blind_id].move_start_time = xTaskGetTickCount();
-    blinds[blind_id].move_start_position = blind_state->current_position;
+    blinds[blind_id].move_start_position = blind_state->current_position; // TODO a che serve??
     xTimerChangePeriod(blinds[blind_id].move_timer, pdMS_TO_TICKS(duration), 0);
     xTimerStart(blinds[blind_id].move_timer, 0);
     ESP_LOGI(TAG, "Moving blind %d to %d%% over %" PRIu32 " ms", blind_id, target_position, duration);
@@ -350,11 +400,93 @@ static void stop_movement_handler(blind_id_t blind_id, bool is_stopped_by_user)
 {
     ESP_RETURN_VOID_ON_FALSE(blind_id < BLIND_COUNT, TAG, "Invalid blind ID: %d", blind_id);
 
-    xTimerStop(blinds[blind_id].move_timer, 0);
+    blind_internal_t *blind = &blinds[blind_id];
 
-    blind_state_t *blind_state = &blinds[blind_id].state;
+    xTimerStop(blind->move_timer, 0);
 
-    ESP_RETURN_VOID_ON_FALSE(blind_state->motion_state != BLIND_MOTION_STATE_IDLE, TAG, "Blind %d already stopped", blind_id);
+    ESP_RETURN_VOID_ON_FALSE(blind->state.motion_state != BLIND_MOTION_STATE_IDLE, TAG, "Blind %d already stopped", blind_id);
+
+    if (blind->state.motion_state == BLIND_MOTION_STATE_MOVING_UP)
+    {
+        ESP_LOGI(TAG, "Blind %d stopped while moving up", blind_id);
+    }
+    else if (blind->state.motion_state == BLIND_MOTION_STATE_MOVING_DOWN)
+    {
+        ESP_LOGI(TAG, "Blind %d stopped while moving down", blind_id);
+    }
+
+    if (is_stopped_by_user)
+    {
+        ESP_LOGI(TAG, "Blind %d stopped by user", blind_id);
+        if (blind->state.position_known)
+        {
+            uint8_t current_position;
+
+            uint32_t elapsed_ticks = xTaskGetTickCount() - blind->move_start_time;
+            uint32_t elapsed_ms = elapsed_ticks * portTICK_PERIOD_MS;
+            // int16_t delta = (int16_t)blind->state.target_position - (int16_t)blind->move_start_position;
+            // uint32_t full_duration = (delta > 0) ? blind->state.full_closing_duration : blind->state.full_opening_duration;
+            // int16_t moved = 0;
+            // if (full_duration > 0)
+            // {
+            //     moved = (int16_t)((elapsed_ms * abs(delta)) / full_duration);
+            // }
+            // if (delta > 0)
+            // {
+            //     current_position = (uint8_t)(blind->move_start_position + moved);
+            //     if (current_position > blind->state.target_position)
+            //         current_position = blind->state.target_position;
+            // }
+
+            // else
+            // {
+            //     current_position = (uint8_t)(blind->move_start_position - moved);
+            //     if (current_position < blind->state.target_position)
+            //         current_position = blind->state.target_position;
+            // }
+            int16_t moved = 0;
+            uint8_t start_position = blind->move_start_position;
+            uint8_t target_position = blind->state.target_position;
+            uint32_t full_duration = 0;
+
+            if (blind->state.motion_state == BLIND_MOTION_STATE_MOVING_DOWN)
+            {
+                full_duration = blind->state.full_closing_duration;
+                moved = (int16_t)((elapsed_ms * abs((int16_t)target_position - (int16_t)start_position)) / full_duration);
+                current_position = (uint8_t)(start_position + moved);
+                if (current_position > target_position)
+                    current_position = target_position;
+            }
+            else // if (blind->state.motion_state == BLIND_MOTION_STATE_MOVING_UP)
+            {
+                full_duration = blind->state.full_opening_duration;
+                moved = (int16_t)((elapsed_ms * abs((int16_t)start_position - (int16_t)target_position)) / full_duration);
+                current_position = (uint8_t)(start_position - moved);
+                if (current_position < target_position)
+                    current_position = target_position;
+            }
+            update_position(blind_id, current_position);
+            blind->state.target_position = current_position;
+        }
+        else
+        {
+            // Since the posizion is not know and the blind didn't reach the target position, we set the position in the middle
+            update_position(blind_id, FULLY_CLOSED_POSITION / 2);
+            blind->state.target_position = FULLY_CLOSED_POSITION / 2;
+        }
+    }
+    else
+    {
+        ESP_LOGI(TAG, "Blind %d stopped by timer", blind_id);
+        update_position(blind_id, blind->state.target_position);
+        blind->state.position_known = true;
+    }
+
+    motor_stop(blind_to_motor[blind_id]);
+    blind->state.motion_state = BLIND_MOTION_STATE_IDLE;
+
+#if 0
+
 
     portENTER_CRITICAL(&blind_mux);
     motor_stop(blind_to_motor[blind_id]);
@@ -371,7 +503,7 @@ static void stop_movement_handler(blind_id_t blind_id, bool is_stopped_by_user)
     blind_state->motion_state = BLIND_MOTION_STATE_IDLE;
     portEXIT_CRITICAL(&blind_mux);
 
-    ESP_LOGI(TAG, "Blind %d stopped at %d%%", blind_id, blind_state->current_position);
+#endif
 
     app_event_post(is_stopped_by_user ? APP_EVENT_BLIND_STOPPED : APP_EVENT_BLIND_STOPPED_ON_LIMIT, &blind_id, sizeof(blind_id));
 }
