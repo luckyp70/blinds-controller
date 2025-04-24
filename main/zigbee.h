@@ -62,15 +62,10 @@
  */
 #define ED_KEEP_ALIVE CONFIG_BLINDS_CONTROLLER_ED_KEEP_ALIVE /* 3000 millisecond */
 
-/**
- * @brief Window covering endpoint for ZCL commands
- */
-#define BLINDS_WINDOW_COVERING_ENDPOINT_A 0x0A
-#define BLINDS_WINDOW_COVERING_ENDPOINT_B 0x0B
-
-#define MANUFACTURER_NAME "\x09" \
-                          "ESPRESSIF"
-#define MODEL_IDENTIFIER "\x07" CONFIG_IDF_TARGET
+#define MANUFACTURER_NAME "\x11" \
+                          "LUCKYP TECHNOLOGY"
+#define MODEL_IDENTIFIER "\x11" \
+                         "Blinds Controller"
 
 /**
  * @brief Channel mask for Zigbee radio
@@ -92,17 +87,18 @@
         }                                                                       \
     }
 #else
-#define ESP_ZB_DEVICE_CONFIG()                            \
-    (esp_zb_cfg_t)                                        \
-    {                                                     \
-        .esp_zb_role = ZB_ROLE,                           \
-        .install_code_policy = INSTALLCODE_POLICY_ENABLE, \
-        .nwk_cfg.zed_cfg = {                              \
-            .ed_timeout = ED_AGING_TIMEOUT,               \
-            .keep_alive = ED_KEEP_ALIVE                   \
-        }                                                 \
+#define ESP_ZB_DEVICE_CONFIG()              \
+    (esp_zb_cfg_t)                          \
+    {                                       \
+        .esp_zb_role = ZB_ROLE,             \
+        .install_code_policy = 0,           \
+        .nwk_cfg.zed_cfg = {                \
+            .ed_timeout = ED_AGING_TIMEOUT, \
+            .keep_alive = ED_KEEP_ALIVE     \
+        }                                   \
     }
 #endif
+// INSTALLCODE_POLICY_ENABLE not used here // TODO fix it
 
 /**
  * @brief Default radio configuration macro
@@ -123,6 +119,19 @@
     {                                                         \
         .host_connection_mode = ZB_HOST_CONNECTION_MODE_NONE, \
     }
+
+#define BLINDS_ENDPOINT_COUNT 2 /**< Number of window covering endpoints */
+
+/**
+ * @brief Endpoint identifiers
+ *
+ * Enum to identify which endpoint to control in a multi-endpoints setup
+ */
+typedef enum
+{
+    BLINDS_ENDPOINT_A = 0x0A, /**< First blind endpoint */
+    BLINDS_ENDPOINT_B = 0x0B, /**< Second blind endpoint */
+} blind_endpoint_id_t;
 
 /**
  * @brief Initialize the Zigbee stack and device

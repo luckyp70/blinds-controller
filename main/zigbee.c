@@ -25,6 +25,20 @@
 
 static const char *TAG = "ZIGBEE";
 
+typedef struct window_cover_endpoint_s
+{
+    uint8_t endpoint_id;       // Remote endpoint
+    uint8_t local_endpoint_id; // ESP32 endpoint it is bound to
+} window_cover_endpoint_t;
+
+typedef struct window_cover_device_s
+{
+    esp_zb_ieee_addr_t ieee_addr;                             // Device IEEE (MAC) address
+    uint16_t short_addr;                                      // 16-bit network address
+    window_cover_endpoint_t endpoints[BLINDS_ENDPOINT_COUNT]; // List of endpoints
+    uint8_t num_endpoints;                                    // Number of endpoints
+} window_cover_device_t;
+
 // Structure for Zigbee string attributes (ZCL CHAR_STRING)
 typedef struct zbstring_s
 {
@@ -33,16 +47,22 @@ typedef struct zbstring_s
 } ESP_ZB_PACKED_STRUCT
     zbstring_t;
 
-// Structure to hold discovered window covering device parameters
-typedef struct window_cover_device_params_s
-{
-    esp_zb_ieee_addr_t ieee_addr; // IEEE (MAC) address of the device
-    uint8_t endpoint;             // Zigbee endpoint
-    uint16_t short_addr;          // 16-bit network address
-} window_cover_device_params_t;
+/** Mapping from blind IDs to their corresponding endpoint IDs */
+static const blind_endpoint_id_t blind_to_endpoint[BLINDS_ENDPOINT_COUNT] = {
+    [BLIND_1] = BLINDS_ENDPOINT_A,
+    [BLIND_2] = BLINDS_ENDPOINT_B,
+};
+
+// Unified context struct for device discovery and binding
+// typedef struct window_cover_binding_ctx_s
+// {
+//     // window_cover_device_t device_params;  // Device info (IEEE, endpoint, short_addr)
+//     uint8_t src_endpoint;                 // Our endpoint (source)
+//     esp_zb_zdo_bind_req_param_t bind_req; // Bind request parameters
+// } window_cover_binding_ctx_t;
 
 // Global variable to store the currently discovered window covering device
-window_cover_device_params_t window_cover_device;
+window_cover_device_t window_cover_device;
 
 // Current lift percentage for the window covering (0-100)
 static uint8_t current_position_lift_percentage = FULLY_OPEN_POSITION;
@@ -73,18 +93,17 @@ static void bind_cb(esp_zb_zdp_status_t zdo_status, void *user_ctx)
 
     if (zdo_status == ESP_ZB_ZDP_STATUS_SUCCESS)
     {
-        /* Local binding succeeds */
         if (bind_req->req_dst_addr == esp_zb_get_short_address())
         {
-            ESP_LOGI(TAG, "Successfully bind the window cover device from address(0x%x) on endpoint(%d)",
-                     window_cover_device.short_addr, window_cover_device.endpoint);
+            ESP_LOGI(TAG, "Successfully bound device 0x%04x to local endpoint %d",
+                     bind_req->dst_address_u.addr_short, bind_req->src_endp);
 
             /* Read peer Manufacture Name & Model Identifier */
             esp_zb_zcl_read_attr_cmd_t read_req = {0};
             read_req.address_mode = ESP_ZB_APS_ADDR_MODE_16_ENDP_PRESENT;
-            read_req.zcl_basic_cmd.src_endpoint = BLINDS_WINDOW_COVERING_ENDPOINT_A;
-            read_req.zcl_basic_cmd.dst_endpoint = window_cover_device.endpoint;
-            read_req.zcl_basic_cmd.dst_addr_u.addr_short = window_cover_device.short_addr;
+            read_req.zcl_basic_cmd.src_endpoint = bind_req->src_endp;                          // BLINDS_WINDOW_COVERING_ENDPOINT_A;
+            read_req.zcl_basic_cmd.dst_endpoint = bind_req->dst_endp;                          // window_cover_device.endpoint;
+            read_req.zcl_basic_cmd.dst_addr_u.addr_short = bind_req->dst_address_u.addr_short; // window_cover_device.short_addr;
             read_req.clusterID = ESP_ZB_ZCL_CLUSTER_ID_BASIC;
 
             uint16_t attributes[] = {
@@ -96,15 +115,18 @@ static void bind_cb(esp_zb_zdp_status_t zdo_status, void *user_ctx)
 
             esp_zb_zcl_read_attr_cmd_req(&read_req);
         }
-        if (bind_req->req_dst_addr == window_cover_device.short_addr)
+
+        if (bind_req->req_dst_addr == bind_req->dst_address_u.addr_short) // window_cover_device.short_addr)
         {
-            ESP_LOGI(TAG, "The window cover device from address(0x%x) on endpoint(%d) successfully binds us",
-                     window_cover_device.short_addr, window_cover_device.endpoint);
+            ESP_LOGI(TAG, "Remote device 0x%04x bound us on endpoint %d",
+                     bind_req->dst_address_u.addr_short, bind_req->dst_endp);
         }
-        free(bind_req); // Free memory allocated for binding request
+        free(bind_req);
     }
     else
     {
+        ESP_LOGW(TAG, "Bind failed for endpoint %d, status: %d", bind_req->src_endp, zdo_status);
+
         /* Bind failed, maybe retry the binding ? */
         // esp_zb_zdo_device_bind_req(bind_req, bind_cb, bind_req);
     }
@@ -120,49 +142,71 @@ static void bind_cb(esp_zb_zdp_status_t zdo_status, void *user_ctx)
  */
 static void user_find_cb(esp_zb_zdp_status_t zdo_status, uint16_t peer_addr, uint8_t peer_endpoint, void *user_ctx)
 {
-    if (zdo_status == ESP_ZB_ZDP_STATUS_SUCCESS)
+
+    ESP_RETURN_VOID_ON_FALSE(zdo_status == ESP_ZB_ZDP_STATUS_SUCCESS, TAG, "Device discovery failed with status: %d", zdo_status);
+
+    // Avoid duplicate endpoints
+    for (uint8_t i = 0; i < window_cover_device.num_endpoints; ++i)
     {
-        ESP_LOGI(TAG, "Found window cover device");
-        /* Store the information of the remote device */
-        window_cover_device_params_t *device = (window_cover_device_params_t *)user_ctx;
-        device->endpoint = peer_endpoint;
-        device->short_addr = peer_addr;
-        esp_zb_ieee_address_by_short(device->short_addr, device->ieee_addr);
-
-        /* 1. Send binding request to the sensor */
-        esp_zb_zdo_bind_req_param_t *bind_req = (esp_zb_zdo_bind_req_param_t *)calloc(1, sizeof(esp_zb_zdo_bind_req_param_t));
-        bind_req->req_dst_addr = peer_addr;
-
-        /* populate the src information of the binding */
-        memcpy(bind_req->src_address, device->ieee_addr, sizeof(esp_zb_ieee_addr_t));
-        bind_req->src_endp = peer_endpoint;
-        bind_req->cluster_id = ESP_ZB_ZCL_CLUSTER_ID_WINDOW_COVERING; // ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT;
-
-        /* populate the dst information of the binding */
-        bind_req->dst_addr_mode = ESP_ZB_ZDO_BIND_DST_ADDR_MODE_64_BIT_EXTENDED;
-        esp_zb_get_long_address(bind_req->dst_address_u.addr_long);
-        bind_req->dst_endp = BLINDS_WINDOW_COVERING_ENDPOINT_A;
-
-        ESP_LOGI(TAG, "Request window device to bind us");
-        esp_zb_zdo_device_bind_req(bind_req, bind_cb, bind_req);
-
-        /* 2. Send binding request to self */
-        bind_req = (esp_zb_zdo_bind_req_param_t *)calloc(1, sizeof(esp_zb_zdo_bind_req_param_t));
-        bind_req->req_dst_addr = esp_zb_get_short_address();
-
-        /* populate the src information of the binding */
-        esp_zb_get_long_address(bind_req->src_address);
-        bind_req->src_endp = BLINDS_WINDOW_COVERING_ENDPOINT_A;
-        bind_req->cluster_id = ESP_ZB_ZCL_CLUSTER_ID_WINDOW_COVERING; // ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT;
-
-        /* populate the dst information of the binding */
-        bind_req->dst_addr_mode = ESP_ZB_ZDO_BIND_DST_ADDR_MODE_64_BIT_EXTENDED;
-        memcpy(bind_req->dst_address_u.addr_long, device->ieee_addr, sizeof(esp_zb_ieee_addr_t));
-        bind_req->dst_endp = peer_endpoint;
-
-        ESP_LOGI(TAG, "Bind window device");
-        esp_zb_zdo_device_bind_req(bind_req, bind_cb, bind_req);
+        if (i < BLINDS_ENDPOINT_COUNT && window_cover_device.endpoints[i].endpoint_id == peer_endpoint)
+        {
+            ESP_LOGI(TAG, "Endpoint %d already stored, skipping", peer_endpoint);
+            return;
+        }
     }
+
+    // Limit check
+    if (window_cover_device.num_endpoints >= BLINDS_ENDPOINT_COUNT)
+    {
+        ESP_LOGW(TAG, "Maximum endpoints reached, cannot store endpoint %d", peer_endpoint);
+        return;
+    }
+
+    // Get IEEE address if not set
+    if (window_cover_device.num_endpoints == 0)
+    {
+        window_cover_device.short_addr = peer_addr;
+        esp_zb_ieee_address_by_short(peer_addr, window_cover_device.ieee_addr);
+    }
+
+    // Assign a local endpoint based on discovery order
+    uint8_t local_endpoint;
+    switch (window_cover_device.num_endpoints)
+    {
+    case 0:
+        local_endpoint = BLINDS_ENDPOINT_A;
+        break;
+    case 1:
+        local_endpoint = BLINDS_ENDPOINT_B;
+        break;
+    default:
+        ESP_LOGW(TAG, "No local endpoint available for remote endpoint %d", peer_endpoint);
+        return;
+    }
+
+    // Save remote → local mapping
+    window_cover_device.endpoints[window_cover_device.num_endpoints].endpoint_id = peer_endpoint;
+    window_cover_device.endpoints[window_cover_device.num_endpoints].local_endpoint_id = local_endpoint;
+    window_cover_device.num_endpoints++;
+
+    // Allocate bind request
+    esp_zb_zdo_bind_req_param_t *bind_req = calloc(1, sizeof(esp_zb_zdo_bind_req_param_t));
+    if (!bind_req)
+    {
+        ESP_LOGE(TAG, "Failed to allocate memory for bind request");
+        return;
+    }
+
+    bind_req->req_dst_addr = peer_addr;
+    memcpy(bind_req->src_address, window_cover_device.ieee_addr, sizeof(esp_zb_ieee_addr_t));
+    bind_req->src_endp = peer_endpoint; // Remote device's endpoint
+    bind_req->cluster_id = ESP_ZB_ZCL_CLUSTER_ID_WINDOW_COVERING;
+    bind_req->dst_addr_mode = ESP_ZB_ZDO_BIND_DST_ADDR_MODE_64_BIT_EXTENDED;
+    esp_zb_get_long_address(bind_req->dst_address_u.addr_long); // Local IEEE
+    bind_req->dst_endp = local_endpoint;                        // Your local endpoint
+
+    ESP_LOGI(TAG, "Binding remote endpoint %d to local endpoint %d", peer_endpoint, local_endpoint);
+    esp_zb_zdo_device_bind_req(bind_req, bind_cb, bind_req);
 }
 
 /**
@@ -188,51 +232,50 @@ static void find_window_cover_device(esp_zb_zdo_match_desc_req_param_t *param, e
  */
 static void setup_attrib_reporting(void)
 {
-    /* Send "read attributes" command to the window cover position */
-    esp_zb_zcl_read_attr_cmd_t read_req = {0};
-    read_req.address_mode = ESP_ZB_APS_ADDR_MODE_DST_ADDR_ENDP_NOT_PRESENT;
-    read_req.zcl_basic_cmd.src_endpoint = BLINDS_WINDOW_COVERING_ENDPOINT_A;
-    read_req.clusterID = ESP_ZB_ZCL_CLUSTER_ID_WINDOW_COVERING;
+    for (uint8_t i = 0; i < BLINDS_ENDPOINT_COUNT && i < window_cover_device.num_endpoints; ++i)
+    {
+        uint8_t endpoint_id = window_cover_device.endpoints[i].endpoint_id;
 
-    uint16_t attributes[] = {
-        ESP_ZB_ZCL_ATTR_WINDOW_COVERING_CURRENT_POSITION_LIFT_PERCENTAGE_ID,
-        // ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_MIN_VALUE_ID,
-        // ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_MAX_VALUE_ID,
-        // ESP_ZB_ZCL_ATTR_TEMP_MEASUREMENT_TOLERANCE_ID
-    };
-    read_req.attr_number = ARRAY_LENTH(attributes);
-    read_req.attr_field = attributes;
+        esp_zb_zcl_read_attr_cmd_t read_req = {0};
+        read_req.address_mode = ESP_ZB_APS_ADDR_MODE_DST_ADDR_ENDP_NOT_PRESENT;
+        read_req.zcl_basic_cmd.src_endpoint = endpoint_id;
+        read_req.clusterID = ESP_ZB_ZCL_CLUSTER_ID_WINDOW_COVERING;
 
-    /* Send "configure report attribute" command to the bound device */
-    esp_zb_zcl_config_report_cmd_t report_cmd = {0};
-    report_cmd.address_mode = ESP_ZB_APS_ADDR_MODE_DST_ADDR_ENDP_NOT_PRESENT;
-    report_cmd.zcl_basic_cmd.src_endpoint = BLINDS_WINDOW_COVERING_ENDPOINT_A;
-    report_cmd.clusterID = ESP_ZB_ZCL_CLUSTER_ID_WINDOW_COVERING;
+        uint16_t attributes[] = {
+            ESP_ZB_ZCL_ATTR_WINDOW_COVERING_CURRENT_POSITION_LIFT_PERCENTAGE_ID,
+        };
+        read_req.attr_number = ARRAY_LENTH(attributes);
+        read_req.attr_field = attributes;
 
-    int16_t report_change = 1; /* report on each 1 percentage points */
-    esp_zb_zcl_config_report_record_t records[] = {
-        {
-            .direction = ESP_ZB_ZCL_REPORT_DIRECTION_SEND,
-            .attributeID = ESP_ZB_ZCL_ATTR_WINDOW_COVERING_CURRENT_POSITION_LIFT_PERCENTAGE_ID,
-            .attrType = ESP_ZB_ZCL_ATTR_TYPE_U8, // ESP_ZB_ZCL_ATTR_TYPE_S16,
-            .min_interval = 0,
-            .max_interval = 0,
-            .reportable_change = &report_change,
-        },
-    };
-    report_cmd.record_number = ARRAY_LENTH(records);
-    report_cmd.record_field = records;
+        esp_zb_zcl_config_report_cmd_t report_cmd = {0};
+        report_cmd.address_mode = ESP_ZB_APS_ADDR_MODE_DST_ADDR_ENDP_NOT_PRESENT;
+        report_cmd.zcl_basic_cmd.src_endpoint = endpoint_id;
+        report_cmd.clusterID = ESP_ZB_ZCL_CLUSTER_ID_WINDOW_COVERING;
 
-    // Lock Zigbee stack for thread safety during reporting configuration
-    esp_zb_lock_acquire(portMAX_DELAY);
-    esp_zb_zcl_config_report_cmd_req(&report_cmd);
-    esp_zb_lock_release();
-    ESP_EARLY_LOGI(TAG, "Send 'configure reporting' command");
+        int16_t report_change = 1;
+        esp_zb_zcl_config_report_record_t records[] = {
+            {
+                .direction = ESP_ZB_ZCL_REPORT_DIRECTION_SEND,
+                .attributeID = ESP_ZB_ZCL_ATTR_WINDOW_COVERING_CURRENT_POSITION_LIFT_PERCENTAGE_ID,
+                .attrType = ESP_ZB_ZCL_ATTR_TYPE_U8,
+                .min_interval = 0,
+                .max_interval = 0,
+                .reportable_change = &report_change,
+            },
+        };
+        report_cmd.record_number = ARRAY_LENTH(records);
+        report_cmd.record_field = records;
 
-    esp_zb_lock_acquire(portMAX_DELAY);
-    esp_zb_zcl_read_attr_cmd_req(&read_req);
-    esp_zb_lock_release();
-    ESP_EARLY_LOGI(TAG, "Send 'read attributes' command");
+        esp_zb_lock_acquire(portMAX_DELAY);
+        esp_zb_zcl_config_report_cmd_req(&report_cmd);
+        esp_zb_lock_release();
+        ESP_EARLY_LOGI(TAG, "Send 'configure reporting' command for endpoint %d", endpoint_id);
+
+        esp_zb_lock_acquire(portMAX_DELAY);
+        esp_zb_zcl_read_attr_cmd_req(&read_req);
+        esp_zb_lock_release();
+        ESP_EARLY_LOGI(TAG, "Send 'read attributes' command for endpoint %d", endpoint_id);
+    }
 }
 
 /**
@@ -267,7 +310,7 @@ void esp_zb_app_signal_handler(esp_zb_app_signal_t *signal_struct)
     uint32_t *p_sg_p = signal_struct->p_app_signal;
     esp_err_t err_status = signal_struct->esp_err_status;
     esp_zb_app_signal_type_t sig_type = *p_sg_p;
-    esp_zb_zdo_signal_device_annce_params_t *dev_annce_params = NULL;
+    const esp_zb_zdo_signal_device_annce_params_t *dev_annce_params = NULL;
     switch (sig_type)
     {
     case ESP_ZB_ZDO_SIGNAL_SKIP_STARTUP:
@@ -501,7 +544,7 @@ static esp_err_t zb_window_covering_movement_handler(const esp_zb_zcl_window_cov
                         ESP_ERR_INVALID_ARG, TAG, "Received message: error status(%d)",
                         message->info.status);
 
-    blind_id_t blind_id = BLIND_1; // TODO hardcoded for now, change to use the correct blind ID
+    blind_id_t blind_id = (blind_to_endpoint[BLIND_1] == message->info.dst_endpoint) ? BLIND_1 : BLIND_2;
 
     switch (message->command)
     {
@@ -604,15 +647,24 @@ static esp_zb_cluster_list_t *custom_window_covering_clusters_create(esp_zb_wind
  * @param window_covering Pointer to the window covering configuration.
  * @return Pointer to the created endpoint list.
  */
-static esp_zb_ep_list_t *custom_window_covering_ep_create(uint8_t endpoint_id, esp_zb_window_covering_cfg_t *window_covering)
+static esp_zb_ep_list_t *custom_window_covering_ep_create(uint8_t endpoint_a_id, uint8_t endpoint_b_id, esp_zb_window_covering_cfg_t *window_covering)
 {
     esp_zb_ep_list_t *ep_list = esp_zb_ep_list_create();
-    esp_zb_endpoint_config_t endpoint_config = {
-        .endpoint = endpoint_id,
+    esp_zb_endpoint_config_t endpoint_a_config = {
+        .endpoint = endpoint_a_id,
         .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
         .app_device_id = ESP_ZB_HA_WINDOW_COVERING_DEVICE_ID,
         .app_device_version = 0};
-    esp_zb_ep_list_add_ep(ep_list, custom_window_covering_clusters_create(window_covering), endpoint_config);
+
+    esp_zb_endpoint_config_t endpoint_b_config = {
+        .endpoint = endpoint_b_id,
+        .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
+        .app_device_id = ESP_ZB_HA_WINDOW_COVERING_DEVICE_ID,
+        .app_device_version = 0};
+
+    esp_zb_ep_list_add_ep(ep_list, custom_window_covering_clusters_create(window_covering), endpoint_a_config);
+    esp_zb_ep_list_add_ep(ep_list, custom_window_covering_clusters_create(window_covering), endpoint_b_config);
+
     return ep_list;
 }
 
@@ -629,13 +681,14 @@ static void esp_zb_task(void *pvParameters)
 
     /* Create customized window cover endpoint */
     esp_zb_window_covering_cfg_t window_covering_cfg = ESP_ZB_DEFAULT_WINDOW_COVERING_CONFIG();
-    esp_zb_ep_list_t *esp_zb_window_covering_ep = custom_window_covering_ep_create(BLINDS_WINDOW_COVERING_ENDPOINT_A, &window_covering_cfg);
+    esp_zb_ep_list_t *esp_zb_window_covering_ep_list = custom_window_covering_ep_create(BLINDS_ENDPOINT_A, BLINDS_ENDPOINT_B, &window_covering_cfg);
 
     /* Register the device */
-    esp_zb_device_register(esp_zb_window_covering_ep);
+    esp_zb_device_register(esp_zb_window_covering_ep_list);
 
     esp_zb_core_action_handler_register(zb_action_handler);
     esp_zb_set_primary_network_channel_set(ESP_ZB_PRIMARY_CHANNEL_MASK);
+
     ESP_ERROR_CHECK(esp_zb_start(false));
     esp_zb_stack_main_loop();
 }
@@ -678,21 +731,20 @@ static void blind_position_change_event_handler(void *arg, esp_event_base_t even
 
     ESP_LOGI(TAG, "Position change event received for blind %d. Position: %d%%", position_update->blind_id, position_update->position);
 
-    current_position_lift_percentage = position_update->position; // TODO manage different values per blind_id
+    blind_endpoint_id_t endpoint_id = blind_to_endpoint[position_update->blind_id];
 
+    uint8_t position = position_update->position;
     esp_zb_zcl_status_t report_status = esp_zb_zcl_set_attribute_val(
-        BLINDS_WINDOW_COVERING_ENDPOINT_A,
+        (uint8_t)endpoint_id,
         ESP_ZB_ZCL_CLUSTER_ID_WINDOW_COVERING,
         ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
         ESP_ZB_ZCL_ATTR_WINDOW_COVERING_CURRENT_POSITION_LIFT_PERCENTAGE_ID,
-        &current_position_lift_percentage,
+        &position,
         false);
-
     if (report_status != ESP_ZB_ZCL_STATUS_SUCCESS)
     {
-        ESP_LOGE(TAG, "Failed to set attribute value: %d", report_status);
+        ESP_LOGE(TAG, "Failed to set attribute value for endpoint %d: %d", endpoint_id, report_status);
         return;
     }
-
-    ESP_LOGI(TAG, "ZCL report successfully sent to ZHA: %d%%", current_position_lift_percentage);
+    ESP_LOGI(TAG, "ZCL report successfully sent to ZHA: endpoint %d, %d%%", endpoint_id, position);
 }
