@@ -33,10 +33,11 @@ static const char *TAG = "BLINDS";
  */
 typedef struct blind_internal_s
 {
-    blind_state_t state;         /**< Public blind state information */
-    TimerHandle_t move_timer;    /**< Timer for position-based movement */
-    uint32_t move_start_time;    /**< Tick count when movement started */
-    uint8_t move_start_position; /**< Position when movement started */
+    blind_state_t state;                 /**< Public blind state information */
+    uint32_t move_start_time;            /**< Tick count when movement started */
+    uint8_t move_start_position;         /**< Position when movement started */
+    TimerHandle_t stop_moving_timer;     /**< Timer for position-based movement */
+    TimerHandle_t update_position_timer; /**< Timer for periodic position updates */
 } blind_internal_t;
 
 /** Mapping from blind IDs to their corresponding motor IDs */
@@ -51,7 +52,8 @@ static portMUX_TYPE blind_mux = portMUX_INITIALIZER_UNLOCKED;
 static blind_internal_t blinds[BLIND_COUNT];
 
 static void stop_movement_handler(blind_id_t blind_id, bool is_stopped_by_user);
-static void stop_timer_callback(TimerHandle_t xTimer);
+static void stop_moving_timer_callback(TimerHandle_t xTimer);
+static void update_position_timer_callback(TimerHandle_t xTimer);
 
 /** Static function declaration */
 static void blind_opening_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
@@ -84,13 +86,22 @@ esp_err_t blinds_init(void)
             blinds[i].state.calibrated = false;
         }
 
-        // Create a timer for position-based movement control
-        blinds[i].move_timer = xTimerCreate(
+        // Create a timer for position-based stop movement control
+        blinds[i].stop_moving_timer = xTimerCreate(
             "blind_move_timer",
             pdMS_TO_TICKS(10000), // dummy, will be changed on use
             pdFALSE,              // one-shot timer
             (void *)(uint32_t)i,  // blind ID as timer ID
-            stop_timer_callback);
+            stop_moving_timer_callback);
+
+        // Create a timer for periodical position updates while moving up or down
+        blinds[i].update_position_timer = xTimerCreate(
+            "update_position_timer",
+            pdMS_TO_TICKS(POSITION_UPDATE_INTERVAL_MS), // time period in milliseconds
+            pdTRUE,                                     // auto-reload timer
+            (void *)(uint32_t)i,                        // blind ID as timer ID
+            update_position_timer_callback);
+
         blinds[i].move_start_time = 0;
         blinds[i].move_start_position = 0;
     }
@@ -209,8 +220,13 @@ void blind_move_to_position(blind_id_t blind_id, uint8_t target_position)
     blinds[blind_id].move_start_position = blind_state->current_position;
     portEXIT_CRITICAL(&blind_mux);
 
-    xTimerChangePeriod(blinds[blind_id].move_timer, pdMS_TO_TICKS(duration), 0);
-    xTimerStart(blinds[blind_id].move_timer, 0);
+    /** Stop moving timer setup and start */
+    xTimerChangePeriod(blinds[blind_id].stop_moving_timer, pdMS_TO_TICKS(duration), 0);
+    xTimerStart(blinds[blind_id].stop_moving_timer, 0);
+
+    /** Update position timer start */
+    xTimerStart(blinds[blind_id].update_position_timer, 0);
+
     ESP_LOGI(TAG, "Moving blind %d to %d%% over %" PRIu32 " ms", blind_id, target_position, duration);
 }
 
@@ -327,7 +343,8 @@ static void stop_movement_handler(blind_id_t blind_id, bool is_stopped_by_user)
 
     blind_internal_t *blind = &blinds[blind_id];
 
-    xTimerStop(blind->move_timer, 0);
+    xTimerStop(blind->stop_moving_timer, 0);
+    xTimerStop(blind->update_position_timer, 0);
 
     ESP_RETURN_VOID_ON_FALSE(blind->state.motion_state != BLIND_MOTION_STATE_IDLE, TAG, "Blind %d already stopped", blind_id);
 
@@ -399,11 +416,28 @@ void blinds_force_calibration(blind_id_t blind_id, uint8_t known_position)
     }
 }
 
-static void stop_timer_callback(TimerHandle_t xTimer)
+static void stop_moving_timer_callback(TimerHandle_t xTimer)
 {
     blind_id_t blind_id = (blind_id_t)pvTimerGetTimerID(xTimer);
     ESP_LOGI(TAG, "Blind %d reached the target", blind_id);
     stop_movement_handler(blind_id, false);
+}
+
+/**
+ * @brief Callback function for the position update timer
+ */
+static void update_position_timer_callback(TimerHandle_t xTimer)
+{
+    blind_id_t blind_id = (blind_id_t)pvTimerGetTimerID(xTimer);
+    if (blinds[blind_id].state.motion_state != BLIND_MOTION_STATE_IDLE)
+    {
+        uint32_t elapsed_ms = (xTaskGetTickCount() - blinds[blind_id].move_start_time) * portTICK_PERIOD_MS;
+        uint8_t current_position = interpolate_position(&blinds[blind_id], elapsed_ms);
+
+        portENTER_CRITICAL(&blind_mux);
+        update_and_notify_position(blind_id, current_position);
+        portEXIT_CRITICAL(&blind_mux);
+    }
 }
 
 /**

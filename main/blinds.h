@@ -43,6 +43,8 @@
 #define BLIND_OPENING_DEFAULT_DURATION 12000 /**< Default duration for opening a blind (in milliseconds) */
 #define BLIND_CLOSING_DEFAULT_DURATION 12000 /**< Default duration for closing a blind (in milliseconds) */
 
+#define POSITION_UPDATE_INTERVAL_MS 2000 /**< Interval for updating position (in milliseconds) */
+
 /**
  * @brief Blind identifiers
  *
