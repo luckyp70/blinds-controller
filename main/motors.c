@@ -24,7 +24,7 @@ static const char *TAG = "MOTORS";
 #define MOTOR_2_IN1 CONFIG_BLINDS_CONTROLLER_MOTOR_2_IN1
 #define MOTOR_2_IN2 CONFIG_BLINDS_CONTROLLER_MOTOR_2_IN2
 
-typedef struct
+typedef struct motor_gpio_s
 {
     gpio_num_t in1;
     gpio_num_t in2;

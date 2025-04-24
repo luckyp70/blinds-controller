@@ -103,7 +103,6 @@ menu "Blinds Controller Configuration"
 
         config BLINDS_CONTROLLER_INSTALLCODE_POLICY_ENABLE
             bool "Enable Install Code Policy"
-            default y
 
         config BLINDS_CONTROLLER_ED_KEEP_ALIVE
             int "End Device Keep Alive (milliseconds)"

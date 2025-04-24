@@ -26,7 +26,8 @@
  * @brief Blinds control interface for the ESP32 blinds controller
  *
  * This module manages the high-level blind control logic including
- * position management, calibration, and movement control.
+ * position management, calibration, and movement control. It provides
+ * an interface for interacting with the blinds system programmatically.
  */
 
 #pragma once

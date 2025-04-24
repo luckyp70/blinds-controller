@@ -11,18 +11,20 @@
  * @brief Zigbee interface for ESP32 blinds controller
  *
  * This module handles Zigbee wireless communication for remote control
- * of window coverings, implementing standard ZCL clusters.
+ * of window coverings, implementing standard ZCL clusters. It provides
+ * an interface for configuring Zigbee roles and managing Zigbee events.
  */
 
 /*
  * Emitted & Handled Events Recap:
  *
- * | Event Name                       | Emitted | Handled | Description                                 |
- * |-----------------------------------|---------|---------|---------------------------------------------|
- * | APP_EVENT_BLIND_OPENING           |   Yes   |   No    | Zigbee command to open the blind            |
- * | APP_EVENT_BLIND_CLOSING           |   Yes   |   No    | Zigbee command to close the blind           |
- * | APP_EVENT_BLIND_STOPPING          |   Yes   |   No    | Zigbee command to stop the blind            |
+ * | Event Name                        | Emitted | Handled | Description                                  |
+ * |-----------------------------------|---------|---------|----------------------------------------------|
+ * | APP_EVENT_BLIND_OPENING           |   Yes   |   No    | Zigbee command to open the blind             |
+ * | APP_EVENT_BLIND_CLOSING           |   Yes   |   No    | Zigbee command to close the blind            |
+ * | APP_EVENT_BLIND_STOPPING          |   Yes   |   No    | Zigbee command to stop the blind             |
  * | APP_EVENT_BLIND_UPDATING_POSITION |   Yes   |   No    | Zigbee command to move to a specific position|
+ * | APP_EVENT_BLIND_POSITION_UPDATED  |   No    |   Yes   | Updates Zigbee attribute for blind position  |
  *
  * "Emitted" means the module posts the event. "Handled" means the module provides a handler for the event.
  */
@@ -50,7 +52,11 @@
 /**
  * @brief Enable/disable install code policy for security
  */
-#define INSTALLCODE_POLICY_ENABLE CONFIG_BLINDS_CONTROLLER_INSTALLCODE_POLICY_ENABLE
+#ifdef CONFIG_BLINDS_CONTROLLER_INSTALLCODE_POLICY_ENABLE
+#define INSTALLCODE_POLICY_ENABLE 1
+#else
+#define INSTALLCODE_POLICY_ENABLE 0
+#endif
 
 /**
  * @brief End device aging timeout (how long coordinator keeps device in its tables)
@@ -87,18 +93,17 @@
         }                                                                       \
     }
 #else
-#define ESP_ZB_DEVICE_CONFIG()              \
-    (esp_zb_cfg_t)                          \
-    {                                       \
-        .esp_zb_role = ZB_ROLE,             \
-        .install_code_policy = 0,           \
-        .nwk_cfg.zed_cfg = {                \
-            .ed_timeout = ED_AGING_TIMEOUT, \
-            .keep_alive = ED_KEEP_ALIVE     \
-        }                                   \
+#define ESP_ZB_DEVICE_CONFIG()                            \
+    (esp_zb_cfg_t)                                        \
+    {                                                     \
+        .esp_zb_role = ZB_ROLE,                           \
+        .install_code_policy = INSTALLCODE_POLICY_ENABLE, \
+        .nwk_cfg.zed_cfg = {                              \
+            .ed_timeout = ED_AGING_TIMEOUT,               \
+            .keep_alive = ED_KEEP_ALIVE                   \
+        }                                                 \
     }
 #endif
-// INSTALLCODE_POLICY_ENABLE not used here // TODO fix it
 
 /**
  * @brief Default radio configuration macro

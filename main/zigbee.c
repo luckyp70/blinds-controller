@@ -4,8 +4,10 @@
  *
  * This file contains the implementation of the Zigbee stack initialization, device discovery,
  * binding, attribute reporting, and event handling for window covering (blinds) control.
- * It integrates with the application event system and blinds driver to provide Zigbee-based
- * automation and remote control of window coverings.
+ *
+ * The module integrates with the application event system and blinds driver to provide
+ * Zigbee-based automation and remote control of window coverings. It also handles
+ * Zigbee-specific configurations and cluster management.
  */
 
 #include "zigbee.h"
@@ -121,7 +123,6 @@ static void bind_cb(esp_zb_zdp_status_t zdo_status, void *user_ctx)
             ESP_LOGI(TAG, "Remote device 0x%04x bound us on endpoint %d",
                      bind_req->dst_address_u.addr_short, bind_req->dst_endp);
         }
-        free(bind_req);
     }
     else
     {
@@ -130,6 +131,8 @@ static void bind_cb(esp_zb_zdp_status_t zdo_status, void *user_ctx)
         /* Bind failed, maybe retry the binding ? */
         // esp_zb_zdo_device_bind_req(bind_req, bind_cb, bind_req);
     }
+
+    free(bind_req);
 }
 
 /**

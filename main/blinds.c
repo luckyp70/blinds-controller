@@ -5,6 +5,9 @@
  * This implementation handles blind position management, movement timing,
  * and interfacing with the motor control layer. It uses FreeRTOS timers
  * to manage timed movements between positions.
+ *
+ * The module interacts with the event system to notify and respond to
+ * blind-related events, such as position updates and movement commands.
  */
 
 #include "blinds.h"
