@@ -95,8 +95,11 @@ void motor_up(motor_id_t motor_id)
 {
     portENTER_CRITICAL(&motor_mux);
     motors_set_direction(motor_id, false, false); // Stop the motor for a moment
-    vTaskDelay(pdMS_TO_TICKS(500));               // Wait for a moment to ensure the motor stops
-    motors_set_direction(motor_id, true, false);  // Set IN1 high and IN2 low
+    motor_states[motor_id] = MOTOR_STOPPED;       // Set state to stopped
+    portEXIT_CRITICAL(&motor_mux);
+    vTaskDelay(pdMS_TO_TICKS(500)); // Wait for a moment to ensure the motor stops
+    portENTER_CRITICAL(&motor_mux);
+    motors_set_direction(motor_id, true, false); // Set IN1 high and IN2 low
     motor_states[motor_id] = MOTOR_MOVING_UP;
     portEXIT_CRITICAL(&motor_mux);
 
@@ -112,8 +115,11 @@ void motor_down(motor_id_t motor_id)
 {
     portENTER_CRITICAL(&motor_mux);
     motors_set_direction(motor_id, false, false); // Stop the motor for a moment
-    vTaskDelay(pdMS_TO_TICKS(500));               // Wait for a moment to ensure the motor stops
-    motors_set_direction(motor_id, false, true);  // Set IN1 low and IN2 high
+    motor_states[motor_id] = MOTOR_STOPPED;       // Set state to stopped
+    portEXIT_CRITICAL(&motor_mux);
+    vTaskDelay(pdMS_TO_TICKS(500)); // Wait for a moment to ensure the motor stops
+    portENTER_CRITICAL(&motor_mux);
+    motors_set_direction(motor_id, false, true); // Set IN1 low and IN2 high
     motor_states[motor_id] = MOTOR_MOVING_DOWN;
     portEXIT_CRITICAL(&motor_mux);
 

@@ -81,8 +81,8 @@ esp_err_t blinds_init(void)
         if (blinds_load_calibration(i) != ESP_OK)
         {
             ESP_LOGW(TAG, "Failed to load calibration for blind %d", i);
-            blinds[i].state.full_opening_duration = BLIND_OPENING_DEFAULT_DURATION;
-            blinds[i].state.full_closing_duration = BLIND_CLOSING_DEFAULT_DURATION;
+            blinds[i].state.full_opening_duration = CONFIG_BLINDS_OPENING_DEFAULT_DURATION;
+            blinds[i].state.full_closing_duration = CONFIG_BLINDS_CLOSING_DEFAULT_DURATION;
             blinds[i].state.calibrated = false;
         }
 
