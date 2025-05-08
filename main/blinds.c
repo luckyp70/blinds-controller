@@ -24,7 +24,7 @@
 #define NVS_NAMESPACE "blinds"
 
 /** Module logging tag */
-static const char *TAG = "BLINDS";
+static const char *TAG = "blinds";
 
 /**
  * @brief Internal blind control structure
@@ -33,11 +33,12 @@ static const char *TAG = "BLINDS";
  */
 typedef struct blind_internal_s
 {
-    blind_state_t state;                 /**< Public blind state information */
-    uint32_t move_start_time;            /**< Tick count when movement started */
-    uint8_t move_start_position;         /**< Position when movement started */
-    TimerHandle_t stop_moving_timer;     /**< Timer for position-based movement */
-    TimerHandle_t update_position_timer; /**< Timer for periodic position updates */
+    blind_state_t state;                  /**< Public blind state information */
+    uint32_t move_start_time;             /**< Tick count when movement started */
+    uint8_t move_start_position;          /**< Position when movement started */
+    blind_stop_reason_t last_stop_reason; /**< Last stop reason */
+    TimerHandle_t stop_moving_timer;      /**< Timer for position-based movement */
+    TimerHandle_t update_position_timer;  /**< Timer for periodic position updates */
 } blind_internal_t;
 
 /** Mapping from blind IDs to their corresponding motor IDs */
@@ -51,15 +52,15 @@ static portMUX_TYPE blind_mux = portMUX_INITIALIZER_UNLOCKED;
 /** Internal state for all blinds */
 static blind_internal_t blinds[BLIND_COUNT];
 
-static void stop_movement_handler(blind_id_t blind_id, bool is_stopped_by_user);
+/** Static function declaration */
+static void stop_movement_handler(blind_id_t blind_id, blind_stop_reason_t stop_reason);
 static void stop_moving_timer_callback(TimerHandle_t xTimer);
 static void update_position_timer_callback(TimerHandle_t xTimer);
-
-/** Static function declaration */
 static void blind_opening_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 static void blind_closing_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 static void blind_moving_to_position_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 static void blind_stopping_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
+static void blind_stopped_on_motor_limit_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 static esp_err_t blinds_load_calibration(blind_id_t blind_id);
 static esp_err_t blinds_save_calibration(blind_id_t blind_id);
 
@@ -104,6 +105,7 @@ esp_err_t blinds_init(void)
 
         blinds[i].move_start_time = 0;
         blinds[i].move_start_position = 0;
+        blinds[i].last_stop_reason = BLIND_STOPPED_NONE;
     }
 
     // Register event handlers
@@ -111,6 +113,8 @@ esp_err_t blinds_init(void)
     ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_CLOSING, &blind_closing_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_CLOSING");
     ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_UPDATING_POSITION, &blind_moving_to_position_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_UPDATING_POSITION");
     ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_STOPPING, &blind_stopping_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_STOPPING");
+    ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SWITCH_LIMIT, &blind_stopped_on_motor_limit_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SWITCH_LIMIT");
+    ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SAFETY_TIME_LIMIT, &blind_stopped_on_motor_limit_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SAFETY_TIME_LIMIT");
     ESP_LOGI(TAG, "Event handlers registered.");
 
     return ESP_OK;
@@ -162,12 +166,14 @@ void blind_move_to_position(blind_id_t blind_id, uint8_t target_position)
     blind_state_t *blind_state = &blinds[blind_id].state;
 
     uint32_t duration = 0;
+    bool move_to_limit = target_position == FULLY_OPEN_POSITION || target_position == FULLY_CLOSED_POSITION;
     uint8_t new_target_position = target_position;
     blind_motion_state_t motion_state;
 
     if (blind_state->position_known)
     {
         ESP_LOGI(TAG, "Blind %d has a known position", blind_id);
+
         /* Calculate the duration based on the distance to travel */
         int16_t delta = (int16_t)target_position - (int16_t)blind_state->current_position;
         if (delta > 0)
@@ -220,14 +226,23 @@ void blind_move_to_position(blind_id_t blind_id, uint8_t target_position)
     blinds[blind_id].move_start_position = blind_state->current_position;
     portEXIT_CRITICAL(&blind_mux);
 
-    /** Stop moving timer setup and start */
-    xTimerChangePeriod(blinds[blind_id].stop_moving_timer, pdMS_TO_TICKS(duration), 0);
-    xTimerStart(blinds[blind_id].stop_moving_timer, 0);
+    if (move_to_limit)
+    {
+        /* Stop a previously set timer */
+        xTimerStop(blinds[blind_id].stop_moving_timer, 0);
+        ESP_LOGI(TAG, "Blind %d moving to limit position %d%%", blind_id, target_position);
+    }
+    else
+    {
+        /** Stop moving timer setup and start */
+        xTimerChangePeriod(blinds[blind_id].stop_moving_timer, pdMS_TO_TICKS(duration), 0);
+        xTimerStart(blinds[blind_id].stop_moving_timer, 0);
+
+        ESP_LOGI(TAG, "Moving blind %d to %d%% over %" PRIu32 " ms", blind_id, target_position, duration);
+    }
 
     /** Update position timer start */
     xTimerStart(blinds[blind_id].update_position_timer, 0);
-
-    ESP_LOGI(TAG, "Moving blind %d to %d%% over %" PRIu32 " ms", blind_id, target_position, duration);
 }
 
 /**
@@ -242,7 +257,7 @@ void blind_stop(blind_id_t blind_id)
     ESP_RETURN_VOID_ON_FALSE(blind_id < BLIND_COUNT, TAG, "Invalid blind ID: %d", blind_id);
 
     ESP_LOGI(TAG, "Stopping blind %d", blind_id);
-    stop_movement_handler(blind_id, true);
+    stop_movement_handler(blind_id, BLIND_STOPPED_BY_USER);
 }
 
 /**
@@ -335,9 +350,9 @@ static uint8_t get_current_position_on_user_stop(blind_id_t blind_id)
  * @brief Handles stopping the movement of a blind, updates state and notifies events.
  *
  * @param blind_id The blind to stop
- * @param is_stopped_by_user True if stopped by user, false if by timer
+ * @param stop_reason The reason for stopping (user, timer, or limit). Refer to blind_stop_reason_t.
  */
-static void stop_movement_handler(blind_id_t blind_id, bool is_stopped_by_user)
+static void stop_movement_handler(blind_id_t blind_id, blind_stop_reason_t stop_reason)
 {
     ESP_RETURN_VOID_ON_FALSE(blind_id < BLIND_COUNT, TAG, "Invalid blind ID: %d", blind_id);
 
@@ -350,29 +365,59 @@ static void stop_movement_handler(blind_id_t blind_id, bool is_stopped_by_user)
 
     ESP_LOGI(TAG, "Blind %d stopped while moving %s", blind_id, blind->state.motion_state == BLIND_MOTION_STATE_MOVING_UP ? "up" : "down");
 
-    if (is_stopped_by_user)
+    switch (stop_reason)
     {
+    case BLIND_STOPPED_BY_USER:
         ESP_LOGI(TAG, "Blind %d stopped by user", blind_id);
         uint8_t current_position = get_current_position_on_user_stop(blind_id);
 
         portENTER_CRITICAL(&blind_mux);
         update_and_notify_position(blind_id, current_position);
         blind->state.target_position = current_position;
-    }
-    else
-    {
-        ESP_LOGI(TAG, "Blind %d stopped by timer", blind_id);
+        motor_stop(blind_to_motor[blind_id]);
+        blind->state.motion_state = BLIND_MOTION_STATE_IDLE;
+        portEXIT_CRITICAL(&blind_mux);
 
+        app_event_post(APP_EVENT_BLIND_STOPPED, &blind_id, sizeof(blind_id));
+        break;
+
+    case BLIND_STOPPED_BY_TIMER:
+        ESP_LOGI(TAG, "Blind %d stopped by timer", blind_id);
         portENTER_CRITICAL(&blind_mux);
         update_and_notify_position(blind_id, blind->state.target_position);
+        motor_stop(blind_to_motor[blind_id]);
+        blind->state.motion_state = BLIND_MOTION_STATE_IDLE;
         blind->state.position_known = true;
+        portEXIT_CRITICAL(&blind_mux);
+
+        app_event_post(APP_EVENT_BLIND_STOPPED_AFTER_TIME_LIMIT, &blind_id, sizeof(blind_id));
+        break;
+
+    case BLIND_STOPPED_BY_SWITCH_LIMIT:
+        ESP_LOGI(TAG, "Blind %d stopped by hard limit", blind_id);
+        portENTER_CRITICAL(&blind_mux);
+        update_and_notify_position(blind_id, blind->state.motion_state == BLIND_MOTION_STATE_MOVING_UP ? FULLY_OPEN_POSITION : FULLY_CLOSED_POSITION);
+        blind->state.motion_state = BLIND_MOTION_STATE_IDLE;
+        blind->state.position_known = true;
+        portEXIT_CRITICAL(&blind_mux);
+
+        app_event_post(APP_EVENT_BLIND_STOPPED_AFTER_SWITCH_LIMIT, &blind_id, sizeof(blind_id));
+        break;
+
+    case BLIND_STOPPED_BY_SAFETY_TIME_LIMIT:
+        ESP_LOGI(TAG, "Blind %d stopped by safety limit", blind_id);
+        portENTER_CRITICAL(&blind_mux);
+        update_and_notify_position(blind_id, blind->state.motion_state == BLIND_MOTION_STATE_MOVING_UP ? FULLY_OPEN_POSITION : FULLY_CLOSED_POSITION); // Assuming it reached the end
+        blind->state.motion_state = BLIND_MOTION_STATE_IDLE;
+        blind->state.position_known = true;
+        portEXIT_CRITICAL(&blind_mux);
+
+        app_event_post(APP_EVENT_BLIND_STOPPED_AFTER_SAFETY_TIME_LIMIT, &blind_id, sizeof(blind_id));
+        break;
+    default:
+        ESP_LOGW(TAG, "Blind %d stopped with unknown reason", blind_id);
+        break;
     }
-
-    motor_stop(blind_to_motor[blind_id]);
-    blind->state.motion_state = BLIND_MOTION_STATE_IDLE;
-    portEXIT_CRITICAL(&blind_mux);
-
-    app_event_post(is_stopped_by_user ? APP_EVENT_BLIND_STOPPED : APP_EVENT_BLIND_STOPPED_ON_LIMIT, &blind_id, sizeof(blind_id));
 }
 
 /**
@@ -400,7 +445,6 @@ void blinds_force_calibration(blind_id_t blind_id, uint8_t known_position)
     ESP_RETURN_VOID_ON_FALSE(known_position <= FULLY_CLOSED_POSITION, TAG, "Invalid position percent: %d", known_position);
 
     portENTER_CRITICAL(&blind_mux);
-    // blinds[blind_id].state.current_position = known_position;
     update_and_notify_position(blind_id, known_position);
     blinds[blind_id].state.target_position = known_position;
     blinds[blind_id].state.calibrated = true;
@@ -420,7 +464,7 @@ static void stop_moving_timer_callback(TimerHandle_t xTimer)
 {
     blind_id_t blind_id = (blind_id_t)pvTimerGetTimerID(xTimer);
     ESP_LOGI(TAG, "Blind %d reached the target", blind_id);
-    stop_movement_handler(blind_id, false);
+    stop_movement_handler(blind_id, BLIND_STOPPED_BY_TIMER);
 }
 
 /**
@@ -520,7 +564,27 @@ static void blind_stopping_event_handler(void *arg, esp_event_base_t event_base,
     ESP_RETURN_VOID_ON_FALSE(blind_id != NULL, TAG, "Received event with NULL blind ID");
 
     ESP_LOGI(TAG, "Stopping event received for blind %d", *blind_id);
-    stop_movement_handler(*blind_id, true);
+    stop_movement_handler(*blind_id, BLIND_STOPPED_BY_USER);
+}
+
+/**
+ * @brief Event handler for motor related stopping events. Updates the blind status.
+ *
+ * @param arg Pointer to the motor ID (as void*).
+ * @param event_base Event base (should be APP_EVENT).
+ * @param event_id Event ID (should be APP_EVENT_BLIND_STOPPED_AFTER_SWITCH_LIMIT or APP_EVENT_BLIND_STOPPED_ON_SAFETY_LIMIT).
+ * @param event_data Pointer to event data (unused).
+ */
+static void blind_stopped_on_motor_limit_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+{
+    ESP_RETURN_VOID_ON_FALSE(event_base == APP_EVENT, TAG, "Received event different from APP_EVENT base by the blind_stopping_on_hard_limit_event_handler");
+    ESP_RETURN_VOID_ON_FALSE(event_id == APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SWITCH_LIMIT || event_id == APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SAFETY_TIME_LIMIT, TAG, "Received unexpected event by the blind_stopped_on_motor_limit_event_handler");
+
+    const blind_id_t *blind_id = (const blind_id_t *)event_data;
+    ESP_RETURN_VOID_ON_FALSE(blind_id != NULL, TAG, "Received event with NULL blind ID");
+
+    ESP_LOGI(TAG, "Stopped on motor limit event %ld received for blind %d", event_id, *blind_id);
+    stop_movement_handler(*blind_id, event_id == APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SWITCH_LIMIT ? BLIND_STOPPED_BY_SWITCH_LIMIT : BLIND_STOPPED_BY_SAFETY_TIME_LIMIT);
 }
 
 /**

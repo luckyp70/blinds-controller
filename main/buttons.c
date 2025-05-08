@@ -12,7 +12,7 @@
 #include "esp_check.h"
 #include "sdkconfig.h"
 
-static const char *TAG = "BUTTONS";
+static const char *TAG = "buttons";
 
 /* GPIO pin configurations from SDK config */
 #define BUTTON_T1_DOWN CONFIG_BLINDS_CONTROLLER_BUTTON_T1_DOWN
@@ -118,6 +118,7 @@ static void debounce_timer_callback(TimerHandle_t xTimer)
  *
  * Configures GPIO pins, creates debounce timers, and installs ISR handlers
  * for all buttons used in the blinds controller.
+ * This module assumes that the ISR service has been initialized and is running (gpio_install_isr_service).
  *
  * @return ESP_OK on success, error code otherwise
  */
@@ -144,16 +145,10 @@ esp_err_t buttons_init(void)
         io_conf.pin_bit_mask = (1ULL << button_gpios[i]);
         ESP_RETURN_ON_ERROR(gpio_config(&io_conf), TAG, "Failed to configure GPIO %d", button_gpios[i]);
 
-        // Crea il timer di debounce
+        // Create the debounce timer
         debounce_timers[i] = xTimerCreate("debounce_timer", pdMS_TO_TICKS(DEBOUNCE_TIME_MS), pdFALSE, (void *)(intptr_t)i, debounce_timer_callback);
-    }
 
-    /* Install ISR service */
-    ESP_RETURN_ON_ERROR(gpio_install_isr_service(0), TAG, "Failed to install ISR service");
-
-    /* Add ISR handlers for each button */
-    for (int i = 0; i < BUTTON_COUNT; i++)
-    {
+        // Add the ISR handler for the button
         ESP_RETURN_ON_ERROR(gpio_isr_handler_add(button_gpios[i], gpio_isr_handler, (void *)i), TAG, "Failed to add ISR handler for GPIO %d", button_gpios[i]);
     }
 

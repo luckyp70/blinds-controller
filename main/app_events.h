@@ -14,16 +14,21 @@ typedef enum app_event_id_t
     APP_EVENT_NONE,
 
     /* BLIND/MOTOR Events */
-    APP_EVENT_BLIND_OPENING,                 /**< Blind is opening */
-    APP_EVENT_BLIND_CLOSING,                 /**< Blind is closing */
-    APP_EVENT_BLIND_STOPPING,                /**< Blind is stopping */
-    APP_EVENT_BLIND_STOPPED,                 /**< Blind has stopped */
-    APP_EVENT_BLIND_STOPPED_ON_LIMIT,        /**< Blind stopped on limit */
-    APP_EVENT_BLIND_STOPPED_ON_SAFETY_LIMIT, /**< Blind stopped on safety limit */
-    APP_EVENT_BLIND_UPDATING_POSITION,       /**< Blind is updating its position */
-    APP_EVENT_BLIND_POSITION_UPDATED,        /**< Blind position updated */
-    APP_EVENT_BLIND_CALIBRATING,             /**< Blind is calibrating */
-    APP_EVENT_BLIND_CALIBRATED,              /**< Blind has been calibrated */
+    APP_EVENT_BLIND_OPENING,                               /**< Blind is opening */
+    APP_EVENT_BLIND_CLOSING,                               /**< Blind is closing */
+    APP_EVENT_BLIND_STOPPING,                              /**< Blind is stopping */
+    APP_EVENT_BLIND_STOPPED,                               /**< Blind has stopped */
+    APP_EVENT_BLIND_STOPPED_AFTER_TIME_LIMIT,              /**< Blind stopped after time limit */
+    APP_EVENT_BLIND_STOPPED_AFTER_SWITCH_LIMIT,            /**< Blind stopped after hard limit */
+    APP_EVENT_BLIND_STOPPED_AFTER_SAFETY_TIME_LIMIT,       /**< Blind stopped after safety limit */
+    APP_EVENT_BLIND_UPDATING_POSITION,                     /**< Blind is updating its position */
+    APP_EVENT_BLIND_POSITION_UPDATED,                      /**< Blind position updated */
+    APP_EVENT_BLIND_MOTOR_STARTED,                         /**< Blind motor started */
+    APP_EVENT_BLIND_MOTOR_STOPPED,                         /**< Blind motor stopped */
+    APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SAFETY_TIME_LIMIT, /**< Blind motor stopped after passing the safe time limit */
+    APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SWITCH_LIMIT,      /**< Blind motor stopped after the activation of the switch limit */
+    APP_EVENT_BLIND_CALIBRATING,                           /**< Blind is calibrating */
+    APP_EVENT_BLIND_CALIBRATED,                            /**< Blind has been calibrated */
 
 } app_event_id_t;
 

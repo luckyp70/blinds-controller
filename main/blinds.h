@@ -9,14 +9,19 @@
 /*
  * Emitted & Handled Events:
  *
- * | Event Name                       | Emitted | Handled | Description                                      |
- * |-----------------------------------|---------|---------|--------------------------------------------------|
- * | APP_EVENT_BLIND_OPENING           |   No    |   Yes   | Command to open (move up) the blind              |
- * | APP_EVENT_BLIND_CLOSING           |   No    |   Yes   | Command to close (move down) the blind           |
- * | APP_EVENT_BLIND_STOPPING          |   No    |   Yes   | Command to stop the blind                        |
- * | APP_EVENT_BLIND_UPDATING_POSITION |   No    |   Yes   | Command to move the blind to a specific position |
- * | APP_EVENT_STOPPED                 |   Yes   |   No    | Blind stopped by the user                        |
- * | APP_EVENT_STOPPED_ON_LIMIT        |   Yes   |   No    | Blind stopped on limit switch                    |
+ * | Event Name                                         | Emitted | Handled | Description                                      |
+ * |----------------------------------------------------|---------|---------|--------------------------------------------------|
+ * | APP_EVENT_BLIND_OPENING                            |   No    |   Yes   | Command to open (move up) the blind              |
+ * | APP_EVENT_BLIND_CLOSING                            |   No    |   Yes   | Command to close (move down) the blind           |
+ * | APP_EVENT_BLIND_STOPPING                           |   No    |   Yes   | Command to stop the blind                        |
+ * | APP_EVENT_BLIND_UPDATING_POSITION                  |   No    |   Yes   | Command to move the blind to a specific position |
+ * | APP_EVENT_BLIND_STOPPED_AFTER_SWITCH_LIMIT         |  Yes    |   Yes   | Blind stopped after limit switch activation      |
+ * | APP_EVENT_BLIND_STOPPED_AFTER_SAFETY_TIME_LIMIT    |  Yes    |   Yes   | Blind stopped after safety time limit            |
+ * | APP_EVENT_BLIND_STOPPED                            |  Yes    |   No    | Blind stopped by the user                        |
+ * | APP_EVENT_BLIND_MOTOR_STARTED                      |  Yes    |   No    | Motor started (up or down)                       |
+ * | APP_EVENT_BLIND_MOTOR_STOPPED                      |  Yes    |   No    | Motor stopped                                    |
+ * | APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SWITCH_LIMIT   |  Yes    |   No    | Motor stopped after limit switch                 |
+ * | APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SAFETY_TIME_LIMIT | Yes |   No    | Motor stopped after safety time limit            |
  *
  * "Emitted" means the module posts the event. "Handled" means the module provides a handler for the event.
  */
@@ -65,6 +70,20 @@ typedef enum
     BLIND_MOTION_STATE_MOVING_UP,  /**< Blind is moving upward */
     BLIND_MOTION_STATE_MOVING_DOWN /**< Blind is moving downward */
 } blind_motion_state_t;
+
+/**
+ * @brief Stop reason for the blinds
+ *
+ * Enum representing the reason why a blind
+ */
+typedef enum
+{
+    BLIND_STOPPED_NONE = 0,             /**< No stop reason */
+    BLIND_STOPPED_BY_USER,              /**< Blind stopped by user */
+    BLIND_STOPPED_BY_TIMER,             /**< Blind stopped by timer */
+    BLIND_STOPPED_BY_SWITCH_LIMIT,      /**< Blind stopped by limit switch */
+    BLIND_STOPPED_BY_SAFETY_TIME_LIMIT, /**< Blind stopped by safety limit */
+} blind_stop_reason_t;
 
 typedef struct blind_position_s
 {

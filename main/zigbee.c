@@ -13,6 +13,7 @@
 #include "zigbee.h"
 #include "app_events.h"
 #include "blinds.h"
+#include "mcu.h"
 #include <string.h>
 
 #include "esp_log.h"
@@ -25,7 +26,7 @@
 #error Define ZB_ED_ROLE in idf.py menuconfig to compile light (End Device) source code.
 #endif
 
-static const char *TAG = "ZIGBEE";
+static const char *TAG = "zigbee";
 
 typedef struct window_cover_endpoint_s
 {
@@ -70,7 +71,12 @@ window_cover_device_t window_cover_device;
 static uint8_t current_position_lift_percentage = FULLY_OPEN_POSITION;
 
 /** Static function declarations */
+static void bdb_start_top_level_commissioning_cb(uint8_t mode_mask);
 static void blind_position_change_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
+static void setup_attrib_reporting(void);
+static esp_err_t deferred_driver_init(void);
+static void esp_zb_task(void *pvParameters);
+static void identify_led_task(void *arg);
 
 /**
  * @brief Callback to start top-level commissioning for Zigbee.
@@ -584,6 +590,32 @@ static esp_err_t zb_window_covering_movement_handler(const esp_zb_zcl_window_cov
 }
 
 /**
+ * @brief Task to blink the LED for identification purposes.
+ *
+ * This task turns on the LED in green for 5 seconds to indicate the identify action.
+ * It is triggered by the Zigbee identify callback.
+ *
+ * @param arg Unused parameter.
+ */
+static void identify_led_task(void *arg)
+{
+    // Turn on the LED for 5 seconds
+    mcu_turn_rgb_led_on(0, 180, 0);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    mcu_turn_rgb_led_off();
+    vTaskDelete(NULL);
+}
+
+/**
+ * @brief Zigbee identify callback function to turn on the integrated LED in green when the identify button is pressed.
+ */
+static void zb_identify_handler(void)
+{
+    ESP_LOGI(TAG, "Zigbee identify button pressed");
+    xTaskCreate(identify_led_task, "identify_led_task", 2048, NULL, 5, NULL);
+}
+
+/**
  * @brief Zigbee core action handler. Dispatches Zigbee core callbacks to the appropriate handler.
  *
  * @param callback_id The callback ID.
@@ -606,6 +638,11 @@ static esp_err_t zb_action_handler(esp_zb_core_action_callback_id_t callback_id,
         break;
     case ESP_ZB_CORE_WINDOW_COVERING_MOVEMENT_CB_ID:
         ret = zb_window_covering_movement_handler((const esp_zb_zcl_window_covering_movement_message_t *)message);
+        break;
+    case ESP_ZB_CORE_SET_ATTR_VALUE_CB_ID:
+        const esp_zb_zcl_set_attr_value_message_t *set_attr_msg = (const esp_zb_zcl_set_attr_value_message_t *)message;
+        if (set_attr_msg->info.cluster == ESP_ZB_ZCL_CLUSTER_ID_IDENTIFY)
+            zb_identify_handler();
         break;
     default:
         ESP_LOGW(TAG, "Receive Zigbee action(0x%x) callback", callback_id);

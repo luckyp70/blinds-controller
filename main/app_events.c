@@ -8,10 +8,11 @@
 #include "app_events.h"
 #include "esp_log.h"
 #include "esp_check.h"
+#include <stdio.h> // Add this include at the top if not present
 
 ESP_EVENT_DEFINE_BASE(APP_EVENT);
 
-static const char *TAG = "EVENTS";
+static const char *TAG = "app_events";
 
 /**
  * @brief The event loop handle for the application.
@@ -122,10 +123,12 @@ const char *app_event_id_to_str(app_event_id_t event_id)
         return "APP_EVENT_BLIND_STOPPING";
     case APP_EVENT_BLIND_STOPPED:
         return "APP_EVENT_BLIND_STOPPED";
-    case APP_EVENT_BLIND_STOPPED_ON_LIMIT:
-        return "APP_EVENT_BLIND_STOPPED_ON_LIMIT";
-    case APP_EVENT_BLIND_STOPPED_ON_SAFETY_LIMIT:
-        return "APP_EVENT_BLIND_STOPPED_ON_SAFETY_LIMIT";
+    case APP_EVENT_BLIND_STOPPED_AFTER_TIME_LIMIT:
+        return "APP_EVENT_BLIND_STOPPED_AFTER_TIME_LIMIT";
+    case APP_EVENT_BLIND_STOPPED_AFTER_SAFETY_TIME_LIMIT:
+        return "APP_EVENT_BLIND_STOPPED_AFTER_SAFETY_TIME_LIMIT";
+    case APP_EVENT_BLIND_STOPPED_AFTER_SWITCH_LIMIT:
+        return "APP_EVENT_BLIND_STOPPED_AFTER_SWITCH_LIMIT";
     case APP_EVENT_BLIND_UPDATING_POSITION:
         return "APP_EVENT_BLIND_UPDATING_POSITION";
     case APP_EVENT_BLIND_POSITION_UPDATED:
@@ -134,7 +137,19 @@ const char *app_event_id_to_str(app_event_id_t event_id)
         return "APP_EVENT_BLIND_CALIBRATING";
     case APP_EVENT_BLIND_CALIBRATED:
         return "APP_EVENT_BLIND_CALIBRATED";
+    case APP_EVENT_BLIND_MOTOR_STARTED:
+        return "APP_EVENT_BLIND_MOTOR_STARTED";
+    case APP_EVENT_BLIND_MOTOR_STOPPED:
+        return "APP_EVENT_BLIND_MOTOR_STOPPED";
+    case APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SWITCH_LIMIT:
+        return "APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SWITCH_LIMIT";
+    case APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SAFETY_TIME_LIMIT:
+        return "APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SAFETY_TIME_LIMIT";
     default:
-        return "UNKNOWN_EVENT";
+    {
+        static char unknown_str[48];
+        snprintf(unknown_str, sizeof(unknown_str), "%d UNKNOWN EVENT", event_id);
+        return unknown_str;
+    }
     }
 }

@@ -17,7 +17,7 @@
 #include "zcl_utility.h"
 #include <stdint.h>
 
-static const char *TAG = "ZCL_UTILITY";
+static const char *TAG = "zcl_utility";
 
 esp_err_t esp_zcl_utility_add_ep_basic_manufacturer_info(esp_zb_ep_list_t *ep_list, uint8_t endpoint_id, zcl_basic_manufacturer_info_t *info)
 {

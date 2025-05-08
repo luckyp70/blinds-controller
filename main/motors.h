@@ -30,13 +30,11 @@
 /*
  * Emitted & Handled Events Recap:
  *
- * | Event Name                              | Emitted | Handled | Description                       |
- * |-----------------------------------------|---------|---------|-----------------------------------|
- * | APP_EVENT_BLIND_OPENING                 |   No    |   Yes   | Command to open the blind         |
- * | APP_EVENT_BLIND_CLOSING                 |   No    |   Yes   | Command to close the blind        |
- * | APP_EVENT_BLIND_STOPPING                |   No    |   Yes   | Command to stop the blind         |
- * | APP_EVENT_BLIND_STOPPED                 |   Yes   |   No    | Blind has stopped                 |
- * | APP_EVENT_BLIND_STOPPED_ON_SAFETY_LIMIT |   Yes   |   No    | Blind stopped on safety limit     |
+ * | Event Name                              | Emitted | Handled | Description                                       |
+ * |-----------------------------------------|---------|---------|---------------------------------------------------|
+ * | APP_EVENT_BLIND_MOTOR_STARTED           |   Yes   |   No    | Blind motor has started rotating                  |
+ * | APP_EVENT_BLIND_STOPPED_AFTER_SWITCH_LIMIT   |   Yes   |   No    | Blind has stopped by the limit switch             |
+ * | APP_EVENT_BLIND_STOPPED_AFTER_SAFETY_TIME_LIMIT |   Yes   |   No    | Blind stopped on safety limit                     |
  *
  * "Emitted" means the module posts the event. "Handled" means the module provides a handler for the event.
  */

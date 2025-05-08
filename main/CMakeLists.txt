@@ -5,13 +5,16 @@ idf_component_register(
         "buttons.c"
         "zigbee.c"
         "blinds.c"
-       "app_events.c"
+        "app_events.c"
+        "mcu.c"
         "zcl_utility/src/zcl_utility.c"
 
     PRIV_REQUIRES 
         "nvs_flash"
         "esp_driver_gpio"
         "esp-zigbee-lib"
+        "esp_adc"
+        "led_strip"
 
     INCLUDE_DIRS 
         "."

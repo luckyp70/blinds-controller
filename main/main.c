@@ -37,15 +37,17 @@
 #include "freertos/FreeRTOS.h"
 
 #include "nvs_flash.h"
+#include "driver/gpio.h"
 #include "esp_log.h"
 
 #include "app_events.h"
+#include "mcu.h"
 #include "motors.h"
 #include "buttons.h"
 #include "zigbee.h"
 #include "blinds.h"
 
-static const char *TAG = "MAIN";
+static const char *TAG = "main";
 
 void app_main(void)
 {
@@ -53,7 +55,11 @@ void app_main(void)
 
     ESP_ERROR_CHECK(nvs_flash_init());
 
-    // Initialize modules
+    /* Install ISR service */
+    ESP_ERROR_CHECK(gpio_install_isr_service(0));
+
+    /* Initialize modules */
+    ESP_ERROR_CHECK(mcu_init());
     ESP_ERROR_CHECK(app_event_init());
     ESP_ERROR_CHECK(motors_init());
     ESP_ERROR_CHECK(buttons_init());

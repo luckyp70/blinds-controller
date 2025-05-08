@@ -2,7 +2,7 @@ menu "Blinds Controller Configuration"
 
     menu "Hardware Configuration"
 
-        menu "Motor Driver GPIO Configuration"
+        menu "Motor Driver Configuration"
 
             config BLINDS_CONTROLLER_MOTOR_1_IN1
                 int "Motor 1 IN1 GPIO"
@@ -31,10 +31,24 @@ menu "Blinds Controller Configuration"
                 range 0 39
                 help
                     GPIO pin connected to Motor 2 IN2.
-    
+
+            config BLINDS_CONTROLLER_MOTOR_1_CURRENT
+                int "Motor 1 Current reading ADC Channel"
+                default 0
+                range 0 6
+                help
+                    ADC Channel associated to Motor 1 Current reading.
+
+            config BLINDS_CONTROLLER_MOTOR_2_CURRENT
+                int "Motor 2 Current reading ADC Channel"
+                default 1
+                range 0 6
+                help
+                    ADC Channel associated to Motor 2 Current reading.             
+
         endmenu
 
-        menu "Physical Buttons GPIO Configuration"
+        menu "Physical Buttons Configuration"
 
             config BLINDS_CONTROLLER_BUTTON_T1_DOWN
                 int "Button T1 DOWN GPIO"
