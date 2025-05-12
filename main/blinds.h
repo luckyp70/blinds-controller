@@ -35,6 +35,20 @@
  * an interface for interacting with the blinds system programmatically.
  */
 
+/*
+ * Position convention for all APIs and state variables:
+ *   - 0% = fully open (blind is completely open)
+ *   - 100% = fully closed (blind is completely closed)
+ *
+ * All position values, including current_position, target_position, and known_position,
+ * represent the percentage of closure (not opening!).
+ *
+ * Example:
+ *   - current_position = 0   => blind is fully open
+ *   - current_position = 100 => blind is fully closed
+ *   - current_position = 50  => blind is half closed
+ */
+
 #pragma once
 
 #include <stdint.h>
@@ -94,17 +108,21 @@ typedef struct blind_position_s
 /**
  * @brief Blind state structure
  *
- * Contains the current state, target position and calibration status
+ * Contains the current state, target position and calibration status.
+ * Position convention:
+ *   - 0% = fully open
+ *   - 100% = fully closed
  */
 typedef struct blind_state_s
 {
     uint8_t current_position;          /**< Current position (100 = fully closed, 0 = fully open) */
-    uint8_t target_position;           /**< Target position to move to */
+    uint8_t target_position;           /**< Target position to move to (0-100, 100 = fully closed) */
     blind_motion_state_t motion_state; /**< Current motion state */
     uint32_t full_opening_duration;    /**< Duration of the movement in milliseconds */
     uint32_t full_closing_duration;    /**< Duration of the movement in milliseconds */
     bool position_known;               /**< Whether the current position is known */
-    bool calibrated;                   /**< Whether the blind has been calibrated */
+    bool calibrated_opening;           /**< Whether the blind has been calibrated on opening */
+    bool calibrated_closing;           /**< Whether the blind has been calibrated on closing */
 } blind_state_t;
 
 /**
@@ -121,8 +139,12 @@ void blind_close(blind_id_t blind_id);
 /**
  * @brief Set target position for a specific blind
  *
+ * Position convention:
+ *   - 0% = fully open
+ *   - 100% = fully closed
+ *
  * @param blind_id Which blind to control
- * @param position_percent Target position (0-100%)
+ * @param target_position Target position (0-100%)
  */
 void blind_move_to_position(blind_id_t blind_id, uint8_t target_position);
 
@@ -133,12 +155,10 @@ void blind_move_to_position(blind_id_t blind_id, uint8_t target_position);
  */
 void blind_stop(blind_id_t blind_id);
 
-blind_motion_state_t blinds_get_motion_state(blind_id_t blind_id);
-
 /**
- * @brief Force calibration of a blind to a known position
+ * @brief Get the current motion state of a specific blind
  *
- * @param blind_id Which blind to calibrate
- * @param known_position Current position to set (0-100%)
+ * @param blind_id Which blind to query
+ * @return Current motion state of the blind
  */
-void blinds_force_calibration(blind_id_t blind_id, uint8_t known_position);
+blind_motion_state_t blinds_get_motion_state(blind_id_t blind_id);

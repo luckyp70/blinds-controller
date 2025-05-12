@@ -31,7 +31,8 @@ static const char *TAG = "motors";
 
 /* Current sampling period (ms)*/
 #define CURRENT_SAMPLING_PERIOD_MS 1000
-#define CURRENT_RUNNING_MOTOR_VOLTAGE_THRESHOLD 2.0 // Voltage threshold to consider the motor running
+#define CURRENT_RUNNING_MOTOR_VOLTAGE_THRESHOLD 1.4 // Voltage threshold to consider the motor running
+#define MOTOR_CURRENT_SAMPLING_GRACE_PERIOD_MS 500  // Grace period in ms before current sampling is considered valid
 
 typedef struct motor_gpio_s
 {
@@ -40,15 +41,31 @@ typedef struct motor_gpio_s
     adc_channel_t current; // Current reading channel
 } motor_gpio_t;
 
+/**
+ * @brief Internal structure holding all state for a single motor.
+ *
+ * This struct consolidates the state, timers, and timing information for each motor.
+ */
+typedef struct motor_internal_s
+{
+    motor_state_t state;                  /**< Current state of the motor (stopped, moving up, moving down) */
+    TimerHandle_t safety_timer;           /**< Safety timeout timer handle */
+    TimerHandle_t current_sampling_timer; /**< Current sampling timer handle */
+    uint32_t start_tick;                  /**< Tick count when the motor started moving */
+} motor_internal_t;
+
 static motor_gpio_t motors_gpio[] = {
     [MOTOR_1] = {.in1 = MOTOR_1_IN1, .in2 = MOTOR_1_IN2, .current = MOTOR_1_CURRENT},
     [MOTOR_2] = {.in1 = MOTOR_2_IN1, .in2 = MOTOR_2_IN2, .current = MOTOR_2_CURRENT},
 };
 
-static motor_state_t motor_states[2] = {MOTOR_STOPPED, MOTOR_STOPPED};
-
-static TimerHandle_t motor_safety_timers[2] = {NULL, NULL};
-static TimerHandle_t motor_current_sampling_timers[2] = {NULL, NULL};
+/**
+ * @brief Array of per-motor state structures, indexed by motor_id_t.
+ */
+static motor_internal_t motors[] = {
+    [MOTOR_1] = {.state = MOTOR_STOPPED, .safety_timer = NULL, .current_sampling_timer = NULL, .start_tick = 0},
+    [MOTOR_2] = {.state = MOTOR_STOPPED, .safety_timer = NULL, .current_sampling_timer = NULL, .start_tick = 0},
+};
 
 static portMUX_TYPE motor_mux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -104,16 +121,17 @@ void motor_up(motor_id_t motor_id)
 {
     portENTER_CRITICAL(&motor_mux);
     set_motor_direction(motor_id, false, false); // Stop the motor for a moment
-    motor_states[motor_id] = MOTOR_STOPPED;      // Set state to stopped
+    motors[motor_id].state = MOTOR_STOPPED;
     portEXIT_CRITICAL(&motor_mux);
-    vTaskDelay(pdMS_TO_TICKS(500)); // Wait for a moment to ensure the motor stops
+    vTaskDelay(pdMS_TO_TICKS(500)); // Wait to ensure the motor is stopped
     portENTER_CRITICAL(&motor_mux);
     set_motor_direction(motor_id, true, false); // Set IN1 high and IN2 low
-    motor_states[motor_id] = MOTOR_MOVING_UP;
+    motors[motor_id].state = MOTOR_MOVING_UP;
+    motors[motor_id].start_tick = xTaskGetTickCount();
     portEXIT_CRITICAL(&motor_mux);
 
-    start_safety_timeout_timer(motor_id);   // Start the timeout timer
-    start_motor_current_sampling(motor_id); // Start the current sampling timer
+    start_safety_timeout_timer(motor_id);
+    start_motor_current_sampling(motor_id);
 
     app_event_post(APP_EVENT_BLIND_MOTOR_STARTED, &motor_id, sizeof(motor_id));
 }
@@ -127,16 +145,17 @@ void motor_down(motor_id_t motor_id)
 {
     portENTER_CRITICAL(&motor_mux);
     set_motor_direction(motor_id, false, false); // Stop the motor for a moment
-    motor_states[motor_id] = MOTOR_STOPPED;      // Set state to stopped
+    motors[motor_id].state = MOTOR_STOPPED;
     portEXIT_CRITICAL(&motor_mux);
-    vTaskDelay(pdMS_TO_TICKS(500)); // Wait for a moment to ensure the motor stops
+    vTaskDelay(pdMS_TO_TICKS(500)); // Wait to ensure the motor is stopped
     portENTER_CRITICAL(&motor_mux);
     set_motor_direction(motor_id, false, true); // Set IN1 low and IN2 high
-    motor_states[motor_id] = MOTOR_MOVING_DOWN;
+    motors[motor_id].state = MOTOR_MOVING_DOWN;
+    motors[motor_id].start_tick = xTaskGetTickCount();
     portEXIT_CRITICAL(&motor_mux);
 
-    start_safety_timeout_timer(motor_id);   // Start the timeout timer
-    start_motor_current_sampling(motor_id); // Start the current sampling timer
+    start_safety_timeout_timer(motor_id);
+    start_motor_current_sampling(motor_id);
 
     app_event_post(APP_EVENT_BLIND_MOTOR_STARTED, &motor_id, sizeof(motor_id));
 }
@@ -150,14 +169,13 @@ void motor_stop(motor_id_t motor_id)
 {
     portENTER_CRITICAL(&motor_mux);
     set_motor_direction(motor_id, false, false); // Set both IN1 and IN2 low
-    motor_states[motor_id] = MOTOR_STOPPED;
+    motors[motor_id].state = MOTOR_STOPPED;
     portEXIT_CRITICAL(&motor_mux);
 
-    // Call timer stop outside the critical section
-    stop_safety_timeout_timer(motor_id);   // Stop the timeout timer
-    stop_motor_current_sampling(motor_id); // Stop the current sampling timer
+    stop_safety_timeout_timer(motor_id);
+    stop_motor_current_sampling(motor_id);
 
-    app_event_post(APP_EVENT_BLIND_MOTOR_STOPPED, &motor_id, sizeof(motor_id)); // Post event indicating the motor has stopped
+    app_event_post(APP_EVENT_BLIND_MOTOR_STOPPED, &motor_id, sizeof(motor_id));
 }
 
 /**
@@ -168,7 +186,7 @@ void motor_stop(motor_id_t motor_id)
  */
 motor_state_t motor_get_state(motor_id_t motor_id)
 {
-    return motor_states[motor_id];
+    return motors[motor_id].state;
 }
 
 /**
@@ -213,17 +231,17 @@ static void set_motor_direction(motor_id_t motor_id, bool in1_level, bool in2_le
  */
 static void safety_timeout_callback(TimerHandle_t xTimer)
 {
-    motor_id_t motor_id = (motor_id_t)(uintptr_t)pvTimerGetTimerID(xTimer); // Retrieve motor ID from timer
+    motor_id_t motor_id = (motor_id_t)(uintptr_t)pvTimerGetTimerID(xTimer);
 
-    if (motor_states[motor_id] == MOTOR_STOPPED)
+    if (motors[motor_id].state == MOTOR_STOPPED)
     {
-        return; // If the motor is already stopped, do nothing
+        return;
     }
 
     ESP_LOGI(TAG, "Motor %d timed out — stopping", motor_id);
-    motor_stop(motor_id); // Stop the motor
+    motor_stop(motor_id);
 
-    app_event_post(APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SAFETY_TIME_LIMIT, &motor_id, sizeof(motor_id)); // Post event indicating the motor has stopped
+    app_event_post(APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SAFETY_TIME_LIMIT, &motor_id, sizeof(motor_id));
 }
 
 /**
@@ -234,10 +252,9 @@ static void safety_timeout_callback(TimerHandle_t xTimer)
  */
 static void start_safety_timeout_timer(motor_id_t motor_id)
 {
-    if (motor_safety_timers[motor_id] == NULL)
+    if (motors[motor_id].safety_timer == NULL)
     {
-        // Create a new timer if it doesn't exist
-        motor_safety_timers[motor_id] = xTimerCreate(
+        motors[motor_id].safety_timer = xTimerCreate(
             "MotorTimeout",
             pdMS_TO_TICKS(CONFIG_BLINDS_CONTROLLER_MOTOR_SAFETY_TIMEOUT),
             pdFALSE,
@@ -245,8 +262,8 @@ static void start_safety_timeout_timer(motor_id_t motor_id)
             safety_timeout_callback);
     }
 
-    xTimerStop(motor_safety_timers[motor_id], 0);  // Stop any active timer
-    xTimerStart(motor_safety_timers[motor_id], 0); // Start or reset the timer
+    xTimerStop(motors[motor_id].safety_timer, 0);
+    xTimerStart(motors[motor_id].safety_timer, 0);
 }
 
 /**
@@ -257,46 +274,56 @@ static void start_safety_timeout_timer(motor_id_t motor_id)
  */
 static void stop_safety_timeout_timer(motor_id_t motor_id)
 {
-    if (motor_safety_timers[motor_id] != NULL)
+    if (motors[motor_id].safety_timer != NULL)
     {
-        xTimerStop(motor_safety_timers[motor_id], 0); // Stop the timer
+        xTimerStop(motors[motor_id].safety_timer, 0);
     }
 }
 
 /**
- * @brief Starts the current sampling timer for the specified motor.
+ * @brief Callback function triggered periodically to sample motor current.
  *
- * @param motor_id The ID of the motor to start the timer for.
+ * This function checks the motor's current and stops the motor if the current
+ * indicates that the motor has stopped due to a limit switch or other reason.
+ *
+ * @param xTimer The timer handle.
  */
 static void current_sampling_timer_callback(TimerHandle_t xTimer)
 {
-    motor_id_t motor_id = (motor_id_t)(uintptr_t)pvTimerGetTimerID(xTimer); // Retrieve motor ID from timer
+    motor_id_t motor_id = (motor_id_t)(uintptr_t)pvTimerGetTimerID(xTimer);
 
-    // Read ADC voltage level
+    // Check if the grace period since motor start has elapsed
+    uint32_t now = xTaskGetTickCount();
+    uint32_t elapsed_ms = (now - motors[motor_id].start_tick) * portTICK_PERIOD_MS;
+    if (elapsed_ms < MOTOR_CURRENT_SAMPLING_GRACE_PERIOD_MS)
+    {
+        // Do not sample current yet, allow time for current to stabilize
+        return;
+    }
+
     float voltage = 0.0f;
     ESP_RETURN_VOID_ON_ERROR(mcu_get_adc_voltage(&voltage, motors_gpio[motor_id].current), TAG, "Failed to read ADC voltage for motor %d", motor_id);
 
     if (voltage < CURRENT_RUNNING_MOTOR_VOLTAGE_THRESHOLD)
     {
-        // Motor is stopped
         ESP_LOGI(TAG, "Motor %d is stopped. Voltage: %.2f V", motor_id, voltage);
-        motor_stop(motor_id); // Stop the motor if it is not running
+        motor_stop(motor_id);
         app_event_post(APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SWITCH_LIMIT, &motor_id, sizeof(motor_id));
     }
 }
 
 /**
  * @brief Starts or resets the current sampling timer for the specified motor.
- *        This timer is used to sample the motor current periodically.
+ *
+ * This timer is used to periodically sample the motor current to detect if the motor has stopped due to a limit switch or other reason.
  *
  * @param motor_id The ID of the motor to start the timer for.
  */
 static void start_motor_current_sampling(motor_id_t motor_id)
 {
-    if (motor_current_sampling_timers[motor_id] == NULL)
+    if (motors[motor_id].current_sampling_timer == NULL)
     {
-        // Create a new timer if it doesn't exist
-        motor_current_sampling_timers[motor_id] = xTimerCreate(
+        motors[motor_id].current_sampling_timer = xTimerCreate(
             "MotorCurrentSampling",
             pdMS_TO_TICKS(CURRENT_SAMPLING_PERIOD_MS),
             pdTRUE,
@@ -304,20 +331,21 @@ static void start_motor_current_sampling(motor_id_t motor_id)
             current_sampling_timer_callback);
     }
 
-    xTimerStop(motor_current_sampling_timers[motor_id], 0);  // Stop any active timer
-    xTimerStart(motor_current_sampling_timers[motor_id], 0); // Start or reset the timer
+    xTimerStop(motors[motor_id].current_sampling_timer, 0);  // Stop any active timer
+    xTimerStart(motors[motor_id].current_sampling_timer, 0); // Start or reset the timer
 }
 
 /**
  * @brief Stops the current sampling timer for the specified motor.
- *        This timer is used to sample the motor current periodically.
+ *
+ * This function stops the periodic current sampling timer for the given motor.
  *
  * @param motor_id The ID of the motor to stop the timer for.
  */
 static void stop_motor_current_sampling(motor_id_t motor_id)
 {
-    if (motor_current_sampling_timers[motor_id] != NULL)
+    if (motors[motor_id].current_sampling_timer != NULL)
     {
-        xTimerStop(motor_current_sampling_timers[motor_id], 0); // Stop the timer
+        xTimerStop(motors[motor_id].current_sampling_timer, 0);
     }
 }

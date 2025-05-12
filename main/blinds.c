@@ -2,6 +2,10 @@
  * @file blinds.c
  * @brief Implementation of blinds control functionality
  *
+ * Position convention:
+ *   - 0% = fully open (blind is completely open)
+ *   - 100% = fully closed (blind is completely closed)
+ *
  * This implementation handles blind position management, movement timing,
  * and interfacing with the motor control layer. It uses FreeRTOS timers
  * to manage timed movements between positions.
@@ -36,6 +40,7 @@ typedef struct blind_internal_s
     blind_state_t state;                  /**< Public blind state information */
     uint32_t move_start_time;             /**< Tick count when movement started */
     uint8_t move_start_position;          /**< Position when movement started */
+    uint32_t move_stop_time;              /**< Tick count when movement stopped */
     blind_stop_reason_t last_stop_reason; /**< Last stop reason */
     TimerHandle_t stop_moving_timer;      /**< Timer for position-based movement */
     TimerHandle_t update_position_timer;  /**< Timer for periodic position updates */
@@ -56,13 +61,14 @@ static blind_internal_t blinds[BLIND_COUNT];
 static void stop_movement_handler(blind_id_t blind_id, blind_stop_reason_t stop_reason);
 static void stop_moving_timer_callback(TimerHandle_t xTimer);
 static void update_position_timer_callback(TimerHandle_t xTimer);
-static void blind_opening_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
-static void blind_closing_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
-static void blind_moving_to_position_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
-static void blind_stopping_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
-static void blind_stopped_on_motor_limit_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
-static esp_err_t blinds_load_calibration(blind_id_t blind_id);
-static esp_err_t blinds_save_calibration(blind_id_t blind_id);
+static void opening_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
+static void closing_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
+static void moving_to_position_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
+static void stopping_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
+static void stopped_on_motor_limit_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
+static void check_and_save_calibration(blind_id_t blind_id, uint8_t start_position, uint32_t duration);
+static esp_err_t load_calibration(blind_id_t blind_id);
+static esp_err_t save_calibration(blind_id_t blind_id);
 
 /**
  * @brief Initialize the blinds system
@@ -78,13 +84,20 @@ esp_err_t blinds_init(void)
         blinds[i].state.target_position = 0;
         blinds[i].state.motion_state = BLIND_MOTION_STATE_IDLE;
         blinds[i].state.position_known = false;
+        blinds[i].state.calibrated_opening = false;
+        blinds[i].state.calibrated_closing = false;
+        blinds[i].state.full_opening_duration = 0;
+        blinds[i].state.full_closing_duration = 0;
 
-        if (blinds_load_calibration(i) != ESP_OK)
+        if (load_calibration(i) != ESP_OK)
         {
-            ESP_LOGW(TAG, "Failed to load calibration for blind %d", i);
+            ESP_LOGI(TAG, "Unable to load calibration for blind %d. Using default opening and closing durations", i);
             blinds[i].state.full_opening_duration = CONFIG_BLINDS_OPENING_DEFAULT_DURATION;
             blinds[i].state.full_closing_duration = CONFIG_BLINDS_CLOSING_DEFAULT_DURATION;
-            blinds[i].state.calibrated = false;
+        }
+        else
+        {
+            ESP_LOGI(TAG, "Loaded calibration for blind %d. Opening duration: %" PRIu32 " ms, Closing duration: %" PRIu32 " ms", i, blinds[i].state.full_opening_duration, blinds[i].state.full_closing_duration);
         }
 
         // Create a timer for position-based stop movement control
@@ -94,6 +107,7 @@ esp_err_t blinds_init(void)
             pdFALSE,              // one-shot timer
             (void *)(uint32_t)i,  // blind ID as timer ID
             stop_moving_timer_callback);
+        ESP_RETURN_ON_FALSE(blinds[i].stop_moving_timer != NULL, ESP_ERR_NO_MEM, TAG, "Failed to create stop moving timer for blind %d", i);
 
         // Create a timer for periodical position updates while moving up or down
         blinds[i].update_position_timer = xTimerCreate(
@@ -102,28 +116,30 @@ esp_err_t blinds_init(void)
             pdTRUE,                                     // auto-reload timer
             (void *)(uint32_t)i,                        // blind ID as timer ID
             update_position_timer_callback);
+        ESP_RETURN_ON_FALSE(blinds[i].update_position_timer != NULL, ESP_ERR_NO_MEM, TAG, "Failed to create update position timer for blind %d", i);
 
         blinds[i].move_start_time = 0;
         blinds[i].move_start_position = 0;
+        blinds[i].move_stop_time = 0;
         blinds[i].last_stop_reason = BLIND_STOPPED_NONE;
     }
 
     // Register event handlers
-    ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_OPENING, &blind_opening_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_OPENING");
-    ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_CLOSING, &blind_closing_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_CLOSING");
-    ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_UPDATING_POSITION, &blind_moving_to_position_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_UPDATING_POSITION");
-    ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_STOPPING, &blind_stopping_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_STOPPING");
-    ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SWITCH_LIMIT, &blind_stopped_on_motor_limit_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SWITCH_LIMIT");
-    ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SAFETY_TIME_LIMIT, &blind_stopped_on_motor_limit_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SAFETY_TIME_LIMIT");
+    ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_OPENING, &opening_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_OPENING");
+    ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_CLOSING, &closing_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_CLOSING");
+    ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_UPDATING_POSITION, &moving_to_position_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_UPDATING_POSITION");
+    ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_STOPPING, &stopping_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_STOPPING");
+    ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SWITCH_LIMIT, &stopped_on_motor_limit_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SWITCH_LIMIT");
+    ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SAFETY_TIME_LIMIT, &stopped_on_motor_limit_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SAFETY_TIME_LIMIT");
     ESP_LOGI(TAG, "Event handlers registered.");
 
     return ESP_OK;
 }
 
 /**
- * @brief Open the specified blind fully (move to 100%)
+ * @brief Open the specified blind fully (move to 0%)
  *
- * Initiates movement to the fully open position (100%).
+ * Initiates movement to the fully open position (0%).
  *
  * @param blind_id ID of the blind to open
  */
@@ -136,9 +152,9 @@ void blind_open(blind_id_t blind_id)
 }
 
 /**
- * @brief Close the specified blind fully (move to 0%)
+ * @brief Close the specified blind fully (move to 100%)
  *
- * Initiates movement to the fully closed position (0%).
+ * Initiates movement to the fully closed position (100%).
  *
  * @param blind_id ID of the blind to close
  */
@@ -152,6 +168,10 @@ void blind_close(blind_id_t blind_id)
 
 /**
  * @brief Set target position for a specific blind
+ *
+ * Position convention:
+ *   - 0% = fully open
+ *   - 100% = fully closed
  *
  * Calculates the movement duration based on the distance to travel and
  * starts a timer to stop the movement when the target is reached.
@@ -285,6 +305,10 @@ static void update_and_notify_position(blind_id_t blind_id, uint8_t current_posi
 /**
  * @brief Interpolates the current position of a blind based on elapsed time and motion state.
  *
+ * Position convention:
+ *   - 0% = fully open
+ *   - 100% = fully closed
+ *
  * @param blind Pointer to the internal blind structure
  * @param elapsed_ms Elapsed time in milliseconds since movement started
  * @return Interpolated current position (0-100%)
@@ -363,6 +387,8 @@ static void stop_movement_handler(blind_id_t blind_id, blind_stop_reason_t stop_
 
     ESP_RETURN_VOID_ON_FALSE(blind->state.motion_state != BLIND_MOTION_STATE_IDLE, TAG, "Blind %d already stopped", blind_id);
 
+    blinds[blind_id].move_stop_time = xTaskGetTickCount();
+
     ESP_LOGI(TAG, "Blind %d stopped while moving %s", blind_id, blind->state.motion_state == BLIND_MOTION_STATE_MOVING_UP ? "up" : "down");
 
     switch (stop_reason)
@@ -396,12 +422,17 @@ static void stop_movement_handler(blind_id_t blind_id, blind_stop_reason_t stop_
     case BLIND_STOPPED_BY_SWITCH_LIMIT:
         ESP_LOGI(TAG, "Blind %d stopped by hard limit", blind_id);
         portENTER_CRITICAL(&blind_mux);
+        uint32_t elapsed_ms = (blinds[blind_id].move_stop_time - blinds[blind_id].move_start_time) * portTICK_PERIOD_MS;
+        uint8_t start_position = blinds[blind_id].move_start_position;
         update_and_notify_position(blind_id, blind->state.motion_state == BLIND_MOTION_STATE_MOVING_UP ? FULLY_OPEN_POSITION : FULLY_CLOSED_POSITION);
         blind->state.motion_state = BLIND_MOTION_STATE_IDLE;
         blind->state.position_known = true;
         portEXIT_CRITICAL(&blind_mux);
 
         app_event_post(APP_EVENT_BLIND_STOPPED_AFTER_SWITCH_LIMIT, &blind_id, sizeof(blind_id));
+
+        check_and_save_calibration(blind_id, start_position, elapsed_ms);
+
         break;
 
     case BLIND_STOPPED_BY_SAFETY_TIME_LIMIT:
@@ -429,35 +460,6 @@ static void stop_movement_handler(blind_id_t blind_id, blind_stop_reason_t stop_
 blind_motion_state_t blinds_get_motion_state(blind_id_t blind_id)
 {
     return blinds[blind_id].state.motion_state;
-}
-
-/**
- * @brief Force calibration of a blind to a known position
- *
- * Sets the current position to a known value and marks the blind as calibrated
- *
- * @param blind_id Which blind to calibrate
- * @param known_position Current position to set (0-100%)
- */
-void blinds_force_calibration(blind_id_t blind_id, uint8_t known_position)
-{
-    ESP_RETURN_VOID_ON_FALSE(blind_id < BLIND_COUNT, TAG, "Invalid blind ID: %d", blind_id);
-    ESP_RETURN_VOID_ON_FALSE(known_position <= FULLY_CLOSED_POSITION, TAG, "Invalid position percent: %d", known_position);
-
-    portENTER_CRITICAL(&blind_mux);
-    update_and_notify_position(blind_id, known_position);
-    blinds[blind_id].state.target_position = known_position;
-    blinds[blind_id].state.calibrated = true;
-    blinds[blind_id].state.motion_state = BLIND_MOTION_STATE_IDLE;
-    portEXIT_CRITICAL(&blind_mux);
-
-    ESP_LOGI(TAG, "Blind %d calibrated at %d%%", blind_id, known_position);
-
-    // Save calibration data to NVS
-    if (blinds_save_calibration(blind_id) != ESP_OK)
-    {
-        ESP_LOGW(TAG, "Failed to save calibration data for blind %d", blind_id);
-    }
 }
 
 static void stop_moving_timer_callback(TimerHandle_t xTimer)
@@ -492,10 +494,10 @@ static void update_position_timer_callback(TimerHandle_t xTimer)
  * @param event_id Event ID (should be APP_EVENT_BLIND_OPENING).
  * @param event_data Pointer to event data (unused).
  */
-static void blind_opening_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+static void opening_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
-    ESP_RETURN_VOID_ON_FALSE(event_base == APP_EVENT, TAG, "Received event different from APP_EVENT base by the blind_opening_event_handler");
-    ESP_RETURN_VOID_ON_FALSE(event_id == APP_EVENT_BLIND_OPENING, TAG, "Received event different from APP_EVENT_BLIND_OPENING by the blind_opening_event_handler");
+    ESP_RETURN_VOID_ON_FALSE(event_base == APP_EVENT, TAG, "Received event different from APP_EVENT base by the opening_event_handler");
+    ESP_RETURN_VOID_ON_FALSE(event_id == APP_EVENT_BLIND_OPENING, TAG, "Received event different from APP_EVENT_BLIND_OPENING by the opening_event_handler");
 
     const blind_id_t *blind_id = (const blind_id_t *)event_data;
     ESP_RETURN_VOID_ON_FALSE(blind_id != NULL, TAG, "Received event with NULL blind ID");
@@ -512,10 +514,10 @@ static void blind_opening_event_handler(void *arg, esp_event_base_t event_base, 
  * @param event_id Event ID (should be APP_EVENT_BLIND_CLOSING).
  * @param event_data Pointer to event data (unused).
  */
-static void blind_closing_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+static void closing_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
-    ESP_RETURN_VOID_ON_FALSE(event_base == APP_EVENT, TAG, "Received event different from APP_EVENT base by the blind_closing_event_handler");
-    ESP_RETURN_VOID_ON_FALSE(event_id == APP_EVENT_BLIND_CLOSING, TAG, "Received event different from APP_EVENT_BLIND_CLOSING by the blind_closing_event_handler");
+    ESP_RETURN_VOID_ON_FALSE(event_base == APP_EVENT, TAG, "Received event different from APP_EVENT base by the closing_event_handler");
+    ESP_RETURN_VOID_ON_FALSE(event_id == APP_EVENT_BLIND_CLOSING, TAG, "Received event different from APP_EVENT_BLIND_CLOSING by the closing_event_handler");
 
     const blind_id_t *blind_id = (const blind_id_t *)event_data;
     ESP_RETURN_VOID_ON_FALSE(blind_id != NULL, TAG, "Received event with NULL blind ID");
@@ -535,10 +537,10 @@ static void blind_closing_event_handler(void *arg, esp_event_base_t event_base, 
  * @param event_id Event ID (should be APP_EVENT_BLIND_UPDATING_POSITION).
  * @param event_data Pointer to event data (should be uint8_t target position).
  */
-static void blind_moving_to_position_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+static void moving_to_position_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
-    ESP_RETURN_VOID_ON_FALSE(event_base == APP_EVENT, TAG, "Received event different from APP_EVENT base by the blind_moving_to_position_event_handler");
-    ESP_RETURN_VOID_ON_FALSE(event_id == APP_EVENT_BLIND_UPDATING_POSITION, TAG, "Received event different from APP_EVENT_BLIND_UPDATING_POSITION by the blind_moving_to_position_event_handler");
+    ESP_RETURN_VOID_ON_FALSE(event_base == APP_EVENT, TAG, "Received event different from APP_EVENT base by the moving_to_position_event_handler");
+    ESP_RETURN_VOID_ON_FALSE(event_id == APP_EVENT_BLIND_UPDATING_POSITION, TAG, "Received event different from APP_EVENT_BLIND_UPDATING_POSITION by the moving_to_position_event_handler");
 
     const blind_position_t *blind_position = (const blind_position_t *)event_data;
     ESP_RETURN_VOID_ON_FALSE(blind_position->position <= FULLY_CLOSED_POSITION && blind_position->position >= FULLY_OPEN_POSITION, TAG, "Invalid position percent: %d%%", blind_position->position);
@@ -555,10 +557,10 @@ static void blind_moving_to_position_event_handler(void *arg, esp_event_base_t e
  * @param event_id Event ID (should be APP_EVENT_BLIND_STOPPING).
  * @param event_data Pointer to event data (unused).
  */
-static void blind_stopping_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+static void stopping_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
-    ESP_RETURN_VOID_ON_FALSE(event_base == APP_EVENT, TAG, "Received event different from APP_EVENT base by the blind_stopping_event_handler");
-    ESP_RETURN_VOID_ON_FALSE(event_id == APP_EVENT_BLIND_STOPPING, TAG, "Received event different from APP_EVENT_BLIND_STOPPING by the blind_stopping_event_handler");
+    ESP_RETURN_VOID_ON_FALSE(event_base == APP_EVENT, TAG, "Received event different from APP_EVENT base by the stopping_event_handler");
+    ESP_RETURN_VOID_ON_FALSE(event_id == APP_EVENT_BLIND_STOPPING, TAG, "Received event different from APP_EVENT_BLIND_STOPPING by the stopping_event_handler");
 
     const blind_id_t *blind_id = (const blind_id_t *)event_data;
     ESP_RETURN_VOID_ON_FALSE(blind_id != NULL, TAG, "Received event with NULL blind ID");
@@ -575,16 +577,60 @@ static void blind_stopping_event_handler(void *arg, esp_event_base_t event_base,
  * @param event_id Event ID (should be APP_EVENT_BLIND_STOPPED_AFTER_SWITCH_LIMIT or APP_EVENT_BLIND_STOPPED_ON_SAFETY_LIMIT).
  * @param event_data Pointer to event data (unused).
  */
-static void blind_stopped_on_motor_limit_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+static void stopped_on_motor_limit_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     ESP_RETURN_VOID_ON_FALSE(event_base == APP_EVENT, TAG, "Received event different from APP_EVENT base by the blind_stopping_on_hard_limit_event_handler");
-    ESP_RETURN_VOID_ON_FALSE(event_id == APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SWITCH_LIMIT || event_id == APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SAFETY_TIME_LIMIT, TAG, "Received unexpected event by the blind_stopped_on_motor_limit_event_handler");
+    ESP_RETURN_VOID_ON_FALSE(event_id == APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SWITCH_LIMIT || event_id == APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SAFETY_TIME_LIMIT, TAG, "Received unexpected event by the stopped_on_motor_limit_event_handler");
 
     const blind_id_t *blind_id = (const blind_id_t *)event_data;
     ESP_RETURN_VOID_ON_FALSE(blind_id != NULL, TAG, "Received event with NULL blind ID");
 
     ESP_LOGI(TAG, "Stopped on motor limit event %ld received for blind %d", event_id, *blind_id);
     stop_movement_handler(*blind_id, event_id == APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SWITCH_LIMIT ? BLIND_STOPPED_BY_SWITCH_LIMIT : BLIND_STOPPED_BY_SAFETY_TIME_LIMIT);
+}
+
+/**
+ * @brief Check and save calibration data for a blind.
+ *
+ * If the blind is already calibrated, do nothing. Otherwise, save the calibration data
+ * to NVS if the duration is valid and both opening and closing calibrations are completed.
+ *
+ * @param blind_id Blind to check and save calibration for
+ * @param start_position Starting position (0 = fully open, 100 = fully closed)
+ * @param duration Duration of the movement in milliseconds
+ */
+static void check_and_save_calibration(blind_id_t blind_id, uint8_t start_position, uint32_t duration)
+{
+    ESP_RETURN_VOID_ON_FALSE(blind_id < BLIND_COUNT, TAG, "Invalid blind ID: %d", blind_id);
+    if (blinds[blind_id].state.calibrated_opening && blinds[blind_id].state.calibrated_closing)
+    {
+        // Already calibrated, do nothing
+        return;
+    }
+    ESP_RETURN_VOID_ON_FALSE(duration > 0, TAG, "Invalid duration: %" PRIu32, duration);
+
+    bool calibration_completed = false;
+
+    portENTER_CRITICAL(&blind_mux);
+    if (start_position == FULLY_OPEN_POSITION && blinds[blind_id].state.calibrated_closing == false)
+    {
+        blinds[blind_id].state.full_closing_duration = duration;
+        blinds[blind_id].state.calibrated_closing = true;
+        calibration_completed = blinds[blind_id].state.calibrated_opening;
+    }
+    else if (start_position == FULLY_CLOSED_POSITION && blinds[blind_id].state.calibrated_opening == false)
+    {
+        blinds[blind_id].state.full_opening_duration = duration;
+        blinds[blind_id].state.calibrated_opening = true;
+        calibration_completed = blinds[blind_id].state.calibrated_closing;
+    }
+    portEXIT_CRITICAL(&blind_mux);
+
+    if (calibration_completed)
+    {
+        ESP_RETURN_VOID_ON_ERROR(save_calibration(blind_id), TAG, "Failed to save calibration data for blind %d", blind_id);
+        ESP_LOGI(TAG, "Blind %d calibration completed and data saved", blind_id);
+    }
 }
 
 /**
@@ -595,7 +641,7 @@ static void blind_stopped_on_motor_limit_event_handler(void *arg, esp_event_base
  * @param blind_id Blind to load calibration for
  * @return ESP_OK on success, error code otherwise
  */
-static esp_err_t blinds_load_calibration(blind_id_t blind_id)
+static esp_err_t load_calibration(blind_id_t blind_id)
 {
     esp_err_t ret = ESP_OK;
     nvs_handle_t nvs;
@@ -604,24 +650,35 @@ static esp_err_t blinds_load_calibration(blind_id_t blind_id)
 
     char key_open[20];
     char key_close[20];
-    char key_calib[20];
+    char key_calib_opening[20];
+    char key_calib_closing[20];
+
     snprintf(key_open, sizeof(key_open), "b%d_open", blind_id);
     snprintf(key_close, sizeof(key_close), "b%d_close", blind_id);
-    snprintf(key_calib, sizeof(key_calib), "b%d_calib", blind_id);
+    snprintf(key_calib_opening, sizeof(key_calib_opening), "b%d_calib_op", blind_id);
+    snprintf(key_calib_closing, sizeof(key_calib_closing), "b%d_calib_cl", blind_id);
 
     uint32_t open = 0;
     uint32_t close = 0;
-    uint8_t calibrated = 0;
+    uint8_t calibrated_opening = 0;
+    uint8_t calibrated_closing = 0;
     ESP_GOTO_ON_ERROR(nvs_get_u32(nvs, key_open, &open), finally, TAG, "Failed to get open duration for blind %d", blind_id);
     ESP_GOTO_ON_ERROR(nvs_get_u32(nvs, key_close, &close), finally, TAG, "Failed to get close duration for blind %d", blind_id);
-    ESP_GOTO_ON_ERROR(nvs_get_u8(nvs, key_calib, &calibrated), finally, TAG, "Failed to get calibration status for blind %d", blind_id);
+    ESP_GOTO_ON_ERROR(nvs_get_u8(nvs, key_calib_opening, &calibrated_opening), finally, TAG, "Failed to get calibration opening status for blind %d", blind_id);
+    ESP_GOTO_ON_ERROR(nvs_get_u8(nvs, key_calib_closing, &calibrated_closing), finally, TAG, "Failed to get calibration closing status for blind %d", blind_id);
 
-    if (open > 0 && close > 0)
-    {
-        blinds[blind_id].state.full_opening_duration = open;
-        blinds[blind_id].state.full_closing_duration = close;
-        blinds[blind_id].state.calibrated = calibrated;
-    }
+    ESP_GOTO_ON_FALSE(calibrated_opening != 0, ESP_ERR_INVALID_STATE, finally, TAG, "Invalid opening calibration status for blind %d", blind_id);
+    ESP_GOTO_ON_FALSE(open > 0, ESP_ERR_INVALID_STATE, finally, TAG, "Invalid opening duration for blind %d", blind_id);
+    ESP_GOTO_ON_FALSE(calibrated_closing != 0, ESP_ERR_INVALID_STATE, finally, TAG, "Invalid closing calibration status for blind %d", blind_id);
+    ESP_GOTO_ON_FALSE(close > 0, ESP_ERR_INVALID_STATE, finally, TAG, "Invalid closing duration for blind %d", blind_id);
+
+    portENTER_CRITICAL(&blind_mux);
+    blinds[blind_id].state.full_opening_duration = open;
+    blinds[blind_id].state.calibrated_opening = (calibrated_opening != 0);
+    blinds[blind_id].state.full_closing_duration = close;
+    blinds[blind_id].state.calibrated_closing = (calibrated_closing != 0);
+    portEXIT_CRITICAL(&blind_mux);
+
 finally:
     nvs_close(nvs);
     return ret;
@@ -635,23 +692,35 @@ finally:
  * @param blind_id Blind to save calibration for
  * @return ESP_OK on success, error code otherwise
  */
-static esp_err_t blinds_save_calibration(blind_id_t blind_id)
+static esp_err_t save_calibration(blind_id_t blind_id)
 {
     esp_err_t ret = ESP_OK;
 
     nvs_handle_t nvs;
     ESP_RETURN_ON_ERROR(nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs), TAG, "Failed to open NVS namespace");
 
+    const blind_state_t *blind_state = &blinds[blind_id].state;
+
+    ESP_RETURN_ON_FALSE(blind_state->calibrated_opening, ESP_ERR_INVALID_STATE, TAG, "Invalid opening calibration status for blind %d", blind_id);
+    ESP_RETURN_ON_FALSE(blind_state->full_opening_duration > 0, ESP_ERR_INVALID_STATE, TAG, "Invalid opening duration for blind %d", blind_id);
+    ESP_RETURN_ON_FALSE(blind_state->calibrated_closing, ESP_ERR_INVALID_STATE, TAG, "Invalid closing calibration status for blind %d", blind_id);
+    ESP_RETURN_ON_FALSE(blind_state->full_closing_duration > 0, ESP_ERR_INVALID_STATE, TAG, "Invalid closing duration for blind %d", blind_id);
+
     char key_open[20];
     char key_close[20];
-    char key_calib[20];
+    char key_calib_opening[20];
+    char key_calib_closing[20];
+
     snprintf(key_open, sizeof(key_open), "b%d_open", blind_id);
     snprintf(key_close, sizeof(key_close), "b%d_close", blind_id);
-    snprintf(key_calib, sizeof(key_calib), "b%d_calib", blind_id);
+    snprintf(key_calib_opening, sizeof(key_calib_opening), "b%d_calib_op", blind_id);
+    snprintf(key_calib_closing, sizeof(key_calib_closing), "b%d_calib_cl", blind_id);
 
     ESP_GOTO_ON_ERROR(nvs_set_u32(nvs, key_open, blinds[blind_id].state.full_opening_duration), finally, TAG, "Failed to set open duration for blind %d", blind_id);
+    ESP_GOTO_ON_ERROR(nvs_set_u8(nvs, key_calib_opening, blinds[blind_id].state.calibrated_opening), finally, TAG, "Failed to set calibration opening status for blind %d", blind_id);
     ESP_GOTO_ON_ERROR(nvs_set_u32(nvs, key_close, blinds[blind_id].state.full_closing_duration), finally, TAG, "Failed to set close duration for blind %d", blind_id);
-    ESP_GOTO_ON_ERROR(nvs_set_u8(nvs, key_calib, blinds[blind_id].state.calibrated), finally, TAG, "Failed to set calibration status for blind %d", blind_id);
+    ESP_GOTO_ON_ERROR(nvs_set_u8(nvs, key_calib_closing, blinds[blind_id].state.calibrated_closing), finally, TAG, "Failed to set calibration closing status for blind %d", blind_id);
+
     ESP_GOTO_ON_ERROR(nvs_commit(nvs), finally, TAG, "Failed to commit NVS changes for blind %d", blind_id);
 
 finally:
