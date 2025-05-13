@@ -134,8 +134,8 @@
  */
 typedef enum
 {
-    BLINDS_ENDPOINT_A = 0x0A, /**< First blind endpoint */
-    BLINDS_ENDPOINT_B = 0x0B, /**< Second blind endpoint */
+    BLIND_A_ENDPOINT_ID = 0x0A, /**< First blind endpoint */
+    BLIND_B_ENDPOINT_ID = 0x0B, /**< Second blind endpoint */
 } blind_endpoint_id_t;
 
 /**

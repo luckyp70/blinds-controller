@@ -4,6 +4,7 @@ idf_component_register(
         "motors.c"
         "buttons.c"
         "zigbee.c"
+        "zigbee_ota.c"
         "blinds.c"
         "app_events.c"
         "mcu.c"
@@ -14,7 +15,9 @@ idf_component_register(
         "esp_driver_gpio"
         "esp-zigbee-lib"
         "esp_adc"
+        "esp_timer"
         "led_strip"
+        "app_update"
 
     INCLUDE_DIRS 
         "."
