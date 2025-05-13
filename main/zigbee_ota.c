@@ -198,7 +198,11 @@ esp_err_t zb_ota_upgrade_query_image_resp_handler(const esp_zb_zcl_ota_upgrade_q
     esp_err_t ret = ESP_OK;
     if (message->info.status == ESP_ZB_ZCL_STATUS_SUCCESS)
     {
-        ESP_LOGI(TAG, "Queried OTA image from address: 0x%04hx, endpoint: %d", message->server_addr.u.short_addr, message->server_endpoint);
+        // Update OTA server address and endpoint with actual values from the response
+        ota_upgrade_server_addr = message->server_addr.u.short_addr;
+        ota_upgrade_server_ep = message->server_endpoint;
+
+        ESP_LOGI(TAG, "Queried OTA image from address: 0x%04hx, endpoint: %d", ota_upgrade_server_addr, ota_upgrade_server_ep);
         ESP_LOGI(TAG, "Image version: 0x%lx, manufacturer code: 0x%x, image size: %ld", message->file_version, message->manufacturer_code,
                  message->image_size);
     }
