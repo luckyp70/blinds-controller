@@ -16,6 +16,7 @@
 
 #include "blinds.h"
 #include "app_events.h"
+#include "mcu.h"
 #include "sdkconfig.h"
 #include <inttypes.h>
 #include "motors.h"
@@ -66,9 +67,11 @@ static void closing_event_handler(void *arg, esp_event_base_t event_base, int32_
 static void moving_to_position_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 static void stopping_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 static void stopped_on_motor_limit_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
+static void calibration_completed_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 static void check_and_save_calibration(blind_id_t blind_id, uint8_t start_position, uint32_t duration);
 static esp_err_t load_calibration(blind_id_t blind_id);
 static esp_err_t save_calibration(blind_id_t blind_id);
+static void calibration_led_blink_task(void *pvParameters);
 
 /**
  * @brief Initialize the blinds system
@@ -131,6 +134,7 @@ esp_err_t blinds_init(void)
     ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_STOPPING, &stopping_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_STOPPING");
     ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SWITCH_LIMIT, &stopped_on_motor_limit_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SWITCH_LIMIT");
     ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SAFETY_TIME_LIMIT, &stopped_on_motor_limit_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SAFETY_TIME_LIMIT");
+    ESP_RETURN_ON_ERROR(app_event_register(APP_EVENT_BLIND_CALIBRATED, &calibration_completed_event_handler, NULL), TAG, "Failed to register event handler for APP_EVENT_BLIND_CALIBRATED");
     ESP_LOGI(TAG, "Event handlers registered.");
 
     return ESP_OK;
@@ -413,7 +417,7 @@ static void stop_movement_handler(blind_id_t blind_id, blind_stop_reason_t stop_
         update_and_notify_position(blind_id, blind->state.target_position);
         motor_stop(blind_to_motor[blind_id]);
         blind->state.motion_state = BLIND_MOTION_STATE_IDLE;
-        blind->state.position_known = true;
+        // Do NOT set position_known here
         portEXIT_CRITICAL(&blind_mux);
 
         app_event_post(APP_EVENT_BLIND_STOPPED_AFTER_TIME_LIMIT, &blind_id, sizeof(blind_id));
@@ -440,7 +444,7 @@ static void stop_movement_handler(blind_id_t blind_id, blind_stop_reason_t stop_
         portENTER_CRITICAL(&blind_mux);
         update_and_notify_position(blind_id, blind->state.motion_state == BLIND_MOTION_STATE_MOVING_UP ? FULLY_OPEN_POSITION : FULLY_CLOSED_POSITION); // Assuming it reached the end
         blind->state.motion_state = BLIND_MOTION_STATE_IDLE;
-        blind->state.position_known = true;
+        // Do NOT set position_known here
         portEXIT_CRITICAL(&blind_mux);
 
         app_event_post(APP_EVENT_BLIND_STOPPED_AFTER_SAFETY_TIME_LIMIT, &blind_id, sizeof(blind_id));
@@ -589,6 +593,24 @@ static void stopped_on_motor_limit_event_handler(void *arg, esp_event_base_t eve
     stop_movement_handler(*blind_id, event_id == APP_EVENT_BLIND_MOTOR_STOPPED_AFTER_SWITCH_LIMIT ? BLIND_STOPPED_BY_SWITCH_LIMIT : BLIND_STOPPED_BY_SAFETY_TIME_LIMIT);
 }
 
+static void calibration_completed_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+{
+    ESP_RETURN_VOID_ON_FALSE(event_base == APP_EVENT, TAG, "Received event different from APP_EVENT base by the calibration_completed_event_handler");
+    ESP_RETURN_VOID_ON_FALSE(event_id == APP_EVENT_BLIND_CALIBRATED, TAG, "Received unexpected event by the calibration_completed_event_handler");
+
+    // const blind_id_t *blind_id = (const blind_id_t *)event_data;
+    // ESP_RETURN_VOID_ON_FALSE(blind_id != NULL, TAG, "Received event with NULL blind ID");
+
+    // Blink internal RGB LED blue 5 times asynchronously to indicate calibration complete
+    xTaskCreate(
+        &calibration_led_blink_task,
+        "calib_led_blink",
+        1024,
+        NULL,
+        tskIDLE_PRIORITY,
+        NULL);
+}
+
 /**
  * @brief Check and save calibration data for a blind.
  *
@@ -602,6 +624,11 @@ static void stopped_on_motor_limit_event_handler(void *arg, esp_event_base_t eve
 static void check_and_save_calibration(blind_id_t blind_id, uint8_t start_position, uint32_t duration)
 {
     ESP_RETURN_VOID_ON_FALSE(blind_id < BLIND_COUNT, TAG, "Invalid blind ID: %d", blind_id);
+    if (!blinds[blind_id].state.position_known)
+    {
+        ESP_LOGD(TAG, "Calibration attempt for blind %d ignored: position not known", blind_id);
+        return;
+    }
     if (blinds[blind_id].state.calibrated_opening && blinds[blind_id].state.calibrated_closing)
     {
         // Already calibrated, do nothing
@@ -629,7 +656,9 @@ static void check_and_save_calibration(blind_id_t blind_id, uint8_t start_positi
     if (calibration_completed)
     {
         ESP_RETURN_VOID_ON_ERROR(save_calibration(blind_id), TAG, "Failed to save calibration data for blind %d", blind_id);
-        ESP_LOGI(TAG, "Blind %d calibration completed and data saved", blind_id);
+        ESP_LOGI(TAG, "Blind %d: calibration complete and saved to NVS", blind_id);
+
+        app_event_post(APP_EVENT_BLIND_CALIBRATED, &blind_id, sizeof(blind_id));
     }
 }
 
@@ -726,4 +755,11 @@ static esp_err_t save_calibration(blind_id_t blind_id)
 finally:
     nvs_close(nvs);
     return ret;
+}
+
+static void calibration_led_blink_task(void *pvParameters)
+{
+    ESP_LOGI(TAG, "Calibration LED blink task started");
+    mcu_blink_rgb_led(0, 0, 150, 1500, (float)0.6, 5);
+    vTaskDelete(NULL);
 }

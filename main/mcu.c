@@ -20,6 +20,8 @@ static adc_oneshot_chan_cfg_t chan_cfg = {
     .atten = ADC_ATTEN_DB_12, // Up to 3.3V approx.
 };
 
+static SemaphoreHandle_t led_mutex = NULL;
+
 /**
  * @brief Initialize the MCU and configure the RGB LED strip.
  *
@@ -45,6 +47,12 @@ esp_err_t mcu_init(void)
         .clk_src = RMT_CLK_SRC_DEFAULT,       // Default clock source for RMT
         .resolution_hz = LED_STRIP_RMT_RES_HZ // Resolution of the RMT signal
     };
+
+    // Create a mutex for thread-safe access to the LED strip
+    if (!led_mutex)
+    {
+        led_mutex = xSemaphoreCreateMutex();
+    }
 
     // Create a new RMT device for the LED strip
     ESP_RETURN_ON_ERROR(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip),
@@ -87,6 +95,7 @@ esp_err_t mcu_init(void)
  */
 esp_err_t mcu_turn_rgb_led_on(uint32_t red, uint32_t green, uint32_t blue)
 {
+    xSemaphoreTake(led_mutex, portMAX_DELAY);
     // Set the color of the first LED (index 0) to the specified RGB values
     ESP_RETURN_ON_ERROR(led_strip_set_pixel(led_strip, 0, red, green, blue),
                         TAG,
@@ -96,6 +105,7 @@ esp_err_t mcu_turn_rgb_led_on(uint32_t red, uint32_t green, uint32_t blue)
     ESP_RETURN_ON_ERROR(led_strip_refresh(led_strip),
                         TAG,
                         "Failed to refresh LED strip");
+    xSemaphoreGive(led_mutex);
 
     return ESP_OK;
 }
@@ -109,16 +119,57 @@ esp_err_t mcu_turn_rgb_led_on(uint32_t red, uint32_t green, uint32_t blue)
  */
 esp_err_t mcu_turn_rgb_led_off(void)
 {
-    // Set the color of the first LED (index 0) to black (off)
-    ESP_RETURN_ON_ERROR(led_strip_set_pixel(led_strip, 0, 0, 0, 0),
+    ESP_RETURN_ON_ERROR(mcu_turn_rgb_led_on(0, 0, 0),
                         TAG,
-                        "Failed to turn off LED");
+                        "Failed to turn off RGB LED");
+    // // Set the color of the first LED (index 0) to black (off)
+    // ESP_RETURN_ON_ERROR(led_strip_set_pixel(led_strip, 0, 0, 0, 0),
+    //                     TAG,
+    //                     "Failed to turn off LED");
 
-    // Refresh the LED strip to apply the changes
-    ESP_RETURN_ON_ERROR(led_strip_refresh(led_strip),
-                        TAG,
-                        "Failed to refresh LED strip");
+    // // Refresh the LED strip to apply the changes
+    // ESP_RETURN_ON_ERROR(led_strip_refresh(led_strip),
+    //                     TAG,
+    //                     "Failed to refresh LED strip");
 
+    return ESP_OK;
+}
+
+/**
+ * @brief Blink the RGB LED with specified color values.
+ *
+ * This function blinks the RGB LED with the specified red, green, and blue intensity values for a given period and duty cycle.
+ *
+ * @param red Intensity of the red component (0-255).
+ * @param green Intensity of the green component (0-255).
+ * @param blue Intensity of the blue component (0-255).
+ * @param period Duration of one blink cycle in milliseconds.
+ * @param duty_cycle Duty cycle of the blink (0.0 to 1.0).
+ * @param num_cycles Number of blink cycles.
+ *
+ * @return ESP_OK on success, or an error code on failure.
+ */
+esp_err_t mcu_blink_rgb_led(uint8_t red, uint8_t green, uint8_t blue, uint32_t period, float duty_cycle, uint8_t num_cycles)
+{
+    uint32_t on_time = (uint32_t)((float)period * duty_cycle + 0.5f);
+    uint32_t off_time = period - on_time;
+
+    for (uint8_t i = 0; i < num_cycles; i++)
+    {
+        // Set the color of the first LED (index 0) to the specified RGB values
+        ESP_RETURN_ON_ERROR(mcu_turn_rgb_led_on(red, green, blue),
+                            TAG,
+                            "Failed to set pixel color");
+
+        vTaskDelay(pdMS_TO_TICKS(on_time));
+
+        // Set the color of the first LED (index 0) to black (off)
+        ESP_RETURN_ON_ERROR(mcu_turn_rgb_led_off(),
+                            TAG,
+                            "Failed to turn off LED");
+
+        vTaskDelay(pdMS_TO_TICKS(off_time));
+    }
     return ESP_OK;
 }
 

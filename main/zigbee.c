@@ -76,6 +76,7 @@ static void setup_attrib_reporting(void);
 static esp_err_t deferred_driver_init(void);
 static void esp_zb_task(void *pvParameters);
 static void identify_led_task(void *arg);
+// static void zigbee_report_attr_cmd_cb(uint8_t arg);
 
 /**
  * @brief Callback to start top-level commissioning for Zigbee.
@@ -773,14 +774,13 @@ static void esp_zb_task(void *pvParameters)
 esp_err_t zigbee_init(void)
 {
     // Initialize OTA downloaded file version from NVS
-    // esp_err_t ret = zb_ota_init_downloaded_file_version();
-    // if (ret != ESP_OK)
-    // {
-    //     ESP_LOGW(TAG, "Failed to initialize OTA downloaded file version: %s", esp_err_to_name(ret));
-    // }
-    ESP_ERROR_CHECK_WITHOUT_ABORT(zb_ota_init_downloaded_file_version());
+    esp_err_t ret = zb_ota_init_downloaded_file_version();
+    if (ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Failed to initialize OTA downloaded file version: %s", esp_err_to_name(ret));
+    }
 
-    // Initialize Zigbee
+    ESP_LOGI(TAG, "Initializing Zigbee stack...");
     esp_zb_platform_config_t config = {
         .radio_config = ESP_ZB_DEFAULT_RADIO_CONFIG(),
         .host_config = ESP_ZB_DEFAULT_HOST_CONFIG(),
@@ -837,15 +837,36 @@ static void blind_position_change_event_handler(void *arg, esp_event_base_t even
         return;
     }
 
-    // Invia un report Zigbee esplicito dopo l'aggiornamento locale
-    esp_zb_zcl_report_attr_cmd_t report_cmd = {
-        .address_mode = ESP_ZB_APS_ADDR_MODE_DST_ADDR_ENDP_NOT_PRESENT,
-        .zcl_basic_cmd = {
-            .src_endpoint = (uint8_t)endpoint_id,
-        },
-        .clusterID = ESP_ZB_ZCL_CLUSTER_ID_WINDOW_COVERING,
-        .attributeID = ESP_ZB_ZCL_ATTR_WINDOW_COVERING_CURRENT_POSITION_LIFT_PERCENTAGE_ID,
-    };
-    esp_zb_zcl_report_attr_cmd_req(&report_cmd);
-    ESP_LOGI(TAG, "ZCL report explicitly sent to ZHA: endpoint %d, %d%%", endpoint_id, position);
+    // // Explicitily send a Zigbee report after locally updating the attribute
+    // static esp_zb_zcl_report_attr_cmd_t *pending_report_cmd = NULL;
+    // pending_report_cmd = malloc(sizeof(esp_zb_zcl_report_attr_cmd_t));
+    // if (pending_report_cmd)
+    // {
+    //     *pending_report_cmd = (esp_zb_zcl_report_attr_cmd_t){
+    //         .address_mode = ESP_ZB_APS_ADDR_MODE_DST_ADDR_ENDP_NOT_PRESENT,
+    //         .zcl_basic_cmd = {
+    //             .src_endpoint = (uint8_t)endpoint_id,
+    //         },
+    //         .clusterID = ESP_ZB_ZCL_CLUSTER_ID_WINDOW_COVERING,
+    //         .attributeID = ESP_ZB_ZCL_ATTR_WINDOW_COVERING_CURRENT_POSITION_LIFT_PERCENTAGE_ID,
+    //     };
+    //     esp_zb_scheduler_alarm(zigbee_report_attr_cmd_cb, 0, 0);
+    // }
 }
+
+// /**
+//  * @brief Callback to safely send Zigbee report from Zigbee stack context.
+//  *
+//  * @param arg Unused parameter.
+//  */
+// static void zigbee_report_attr_cmd_cb(uint8_t arg)
+// {
+//     (void)arg; // Suppress unused warning
+//     extern esp_zb_zcl_report_attr_cmd_t *pending_report_cmd;
+//     if (pending_report_cmd)
+//     {
+//         esp_zb_zcl_report_attr_cmd_req(pending_report_cmd);
+//         free(pending_report_cmd);
+//         pending_report_cmd = NULL;
+//     }
+// }
