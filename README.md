@@ -1,18 +1,26 @@
+<!-- Project Badges -->
+
+![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.4%2B-blue)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+
 # ESP32 Blinds Controller
 
 A smart window blinds controller that uses ESP32 microcontroller with Zigbee connectivity to automate window blinds/shades operation.
 
 ## Overview
 
-This project implements a window blinds controller using ESP32 that can control up to two motors for automated window coverings. The controller integrates with Zigbee networks to provide wireless control capabilities and supports physical button controls for manual operation.
+This project implements a window blinds controller using ESP32 that can control up to two motors for automated window coverings. The controller integrates with Zigbee networks to provide wireless control capabilities and supports physical button controls for manual operation. It is designed for easy integration with Home Automation platforms (e.g., Home Assistant, Zigbee2MQTT, SmartThings) and supports OTA firmware updates and calibration.
 
 ## Features
 
 - **Dual Motor Control**: Can control two separate motors for up/down movement
 - **Physical Button Controls**: Four buttons for manual operation (up/down for each blind)
-- **Zigbee Connectivity**: Integrates with home automation systems using Zigbee protocol
+- **Zigbee Connectivity**: Integrates with home automation systems using Zigbee protocol (HA Window Covering cluster)
 - **Safety Timeout**: Automatic motor cutoff after 15 seconds to prevent overheating
-- **Window Covering Zigbee Cluster**: Implements the standard Zigbee HA Window Covering cluster
+- **Window Covering Zigbee Cluster**: Implements the standard Zigbee HA Window Covering cluster (supports open/close/stop/position)
+- **OTA Firmware Upgrade**: Supports Zigbee OTA cluster for remote firmware updates
+- **Calibration & Persistence**: Stores calibration data in NVS for accurate movement durations
+- **LED Feedback**: Uses onboard RGB LED for status and calibration feedback
 
 ## Hardware Requirements
 
@@ -22,6 +30,7 @@ This project implements a window blinds controller using ESP32 that can control 
 - 4 buttons for manual control
 - Power supply appropriate for your motors and ESP32
 - Blinds/shade mechanism compatible with the motors
+- (Optional) RGB LED for feedback
 
 ### GPIO Pin Assignments
 
@@ -35,11 +44,15 @@ This project implements a window blinds controller using ESP32 that can control 
 | Button T1 DOWN | 10       | Blind 1 down button                               |
 | Button T2 UP   | 15       | Blind 2 up button                                 |
 | Button T2 DOWN | 14       | Blind 2 down button                               |
+| RGB LED        | (config) | Optional, see mcu.c for pin assignment            |
+| Motor 1 ADC    | 8        | Motor 1 current sense input (ADC, see motors.c)   |
+| Motor 2 ADC    | 9        | Motor 2 current sense input (ADC, see motors.c)   |
 
 ## Software Requirements
 
 - ESP-IDF v5.4 or later
-- ESP-Zigbee-SDK (included as components)
+- ESP-Zigbee-SDK (included as managed components)
+- FreeRTOS (bundled with ESP-IDF)
 
 ## Building the Project
 
@@ -80,7 +93,17 @@ This project implements a window blinds controller using ESP32 that can control 
 
 The controller is configured as a Zigbee End Device by default, implementing the Window Covering device profile. It can be paired with any Zigbee coordinator (like Home Assistant with Zigbee2MQTT, Samsung SmartThings, etc.).
 
+- **Pairing**: Put your Zigbee coordinator in pairing mode and power up the controller. The device will join automatically.
+- **Binding**: Use your Zigbee coordinator to bind the Window Covering cluster for remote control.
+- **OTA**: The device supports Zigbee OTA firmware upgrades (see `zigbee_ota.c`).
+
 To modify Zigbee settings, use `idf.py menuconfig` and navigate to "Blinds Controller Configuration" → "Zigbee Configuration".
+
+## Calibration
+
+- The controller supports automatic calibration of opening/closing durations for accurate position tracking.
+- Calibration data is stored in NVS and is persistent across reboots.
+- To recalibrate, reset calibration data in NVS or use a dedicated Zigbee command (if implemented).
 
 ## Usage
 
@@ -110,18 +133,30 @@ The controller implements the Zigbee Home Automation Window Covering cluster, wh
 
 ```
 ├── CMakeLists.txt          # Project-level CMake configuration
-├── main                    # Main application source code
-│   ├── buttons.c           # Button handling implementation
-│   ├── buttons.h           # Button interface declarations
-│   ├── CMakeLists.txt      # Component-level CMake configuration
-│   ├── Kconfig             # Project configuration options
-│   ├── main.c              # Application entry point
-│   ├── motors.c            # Motor control implementation
-│   ├── motors.h            # Motor control interface declarations
-│   ├── zigbee.c            # Zigbee functionality implementation
-│   └── zigbee.h            # Zigbee interface declarations
-└── README.md               # This file
+├── main/                   # Main application source code
+│   ├── app_events.c/h      # Event system for inter-module communication
+│   ├── blinds.c/h          # Blinds control logic and state
+│   ├── buttons.c/h         # Button handling implementation
+│   ├── motors.c/h          # Motor driver interface
+│   ├── mcu.c/h             # MCU and LED utilities
+│   ├── zigbee.c/h          # Zigbee stack integration
+│   ├── zigbee_ota.c/h      # Zigbee OTA update support
+│   └── zcl_utility/        # ZCL utility helpers
+├── managed_components/     # Espressif Zigbee/LED libraries
+├── components/             # Additional components (if any)
+├── build/                  # Build output
+├── README.md               # This file
+└── docs/                   # Documentation and diagrams
 ```
+
+## Main Software Modules
+
+- **blinds.c/h**: Implements blind state, movement, calibration, and event handling
+- **zigbee.c/h**: Handles Zigbee stack, device discovery, attribute reporting, and Zigbee events
+- **motors.c/h**: Motor driver abstraction for up/down/stop
+- **app_events.c/h**: Event system for decoupled module communication
+- **zigbee_ota.c/h**: Zigbee OTA firmware update support
+- **mcu.c/h**: MCU-level utilities (LED, etc.)
 
 ## License
 
@@ -129,7 +164,7 @@ This project is licensed under the MIT License - see the header comments in the 
 
 ## Authors
 
-- Fortunato Pasqualone - Initial work - April 2025
+- Fortunato Pasqualone - Initial work - 2024–2025
 
 ## Troubleshooting
 
@@ -149,3 +184,14 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
 4. Push to the Branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
+
+## Acknowledgements
+
+- [Espressif Zigbee SDK](https://github.com/espressif/esp-zigbee-sdk)
+- [FreeRTOS](https://www.freertos.org/)
+- [Zigbee2MQTT](https://www.zigbee2mqtt.io/)
+- [Home Assistant](https://www.home-assistant.io/)
+
+## Support / Contact
+
+For questions, bug reports, or feature requests, please open an issue on GitHub or contact the author via [GitHub profile](https://github.com/yourusername).
