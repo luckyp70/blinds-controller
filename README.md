@@ -89,8 +89,8 @@ The default GPIO assignments are as follows:
 1. **Install ESP-IDF** ([guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html))
 2. **Clone the repository**
    ```sh
-   git clone https://github.com/yourusername/esp32-blinds-controller.git
-   cd esp32-blinds-controller
+   git clone https://github.com/luckyp70/blinds-controller.git
+   cd blinds-controller
    ```
 3. **Configure hardware and Zigbee settings**
    ```sh
