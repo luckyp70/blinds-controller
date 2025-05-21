@@ -117,7 +117,6 @@ The default GPIO assignments are as follows:
 - **Calibration**: Automatic after first full open-close cycle; durations stored in NVS. Recalibrate by clearing NVS (see [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/storage/nvs_flash.html)).
 - **Manual Control**: Use buttons for up/down/stop per blind. To stop, press the same direction button again while the blind is moving.
 - **Zigbee Control**: Supports open, close, stop, and set position commands.
-- **Current Sensing**: Monitors motor current for safety and diagnostics.
 - **LED Feedback**: RGB LED indicates status, pairing, and calibration.
 
 ## License
