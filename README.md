@@ -20,7 +20,7 @@ This firmware enables automated and manual control of two roller blinds using an
 - **Physical Buttons**: Manual up/down/stop for each blind
 - **Safety Timeout**: Automatic cutoff to prevent motor overheating
 - **OTA Updates**: Zigbee OTA cluster for remote firmware upgrades
-- **LED Feedback**: RGB LED for status and calibration indication
+- **LED Feedback**: RGB LED that blinks green when the device is identified via Zigbee and blue when calibration data is stored in NVM.
 - **Modular Codebase**: Event-driven, easily extensible architecture
 
 ## Hardware Requirements
@@ -117,7 +117,6 @@ The default GPIO assignments are as follows:
 - **Calibration**: Automatic after first full open-close cycle; durations stored in NVS. Recalibrate by clearing NVS (see [ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/storage/nvs_flash.html)).
 - **Manual Control**: Use buttons for up/down/stop per blind. To stop, press the same direction button again while the blind is moving.
 - **Zigbee Control**: Supports open, close, stop, and set position commands.
-- **LED Feedback**: RGB LED indicates status, pairing, and calibration.
 
 ## License
 
