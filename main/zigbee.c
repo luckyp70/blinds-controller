@@ -20,7 +20,7 @@
 #include "ha/esp_zigbee_ha_standard.h"
 #include "zcl/esp_zigbee_zcl_window_covering.h"
 
-#define ARRAY_LENTH(arr) (sizeof(arr) / sizeof(arr[0]))
+#define ARRAY_LENGTH(arr) (sizeof(arr) / sizeof(arr[0]))
 
 #if !defined ZB_ED_ROLE
 #error Define ZB_ED_ROLE in idf.py menuconfig to compile light (End Device) source code.
@@ -76,7 +76,6 @@ static void setup_attrib_reporting(void);
 static esp_err_t deferred_driver_init(void);
 static void esp_zb_task(void *pvParameters);
 static void identify_led_task(void *arg);
-// static void zigbee_report_attr_cmd_cb(uint8_t arg);
 
 /**
  * @brief Callback to start top-level commissioning for Zigbee.
@@ -118,7 +117,7 @@ static void bind_cb(esp_zb_zdp_status_t zdo_status, void *user_ctx)
                 ESP_ZB_ZCL_ATTR_BASIC_MANUFACTURER_NAME_ID,
                 ESP_ZB_ZCL_ATTR_BASIC_MODEL_IDENTIFIER_ID,
             };
-            read_req.attr_number = ARRAY_LENTH(attributes);
+            read_req.attr_number = ARRAY_LENGTH(attributes);
             read_req.attr_field = attributes;
 
             esp_zb_zcl_read_attr_cmd_req(&read_req);
@@ -253,7 +252,7 @@ static void setup_attrib_reporting(void)
         uint16_t attributes[] = {
             ESP_ZB_ZCL_ATTR_WINDOW_COVERING_CURRENT_POSITION_LIFT_PERCENTAGE_ID,
         };
-        read_req.attr_number = ARRAY_LENTH(attributes);
+        read_req.attr_number = ARRAY_LENGTH(attributes);
         read_req.attr_field = attributes;
 
         esp_zb_zcl_config_report_cmd_t report_cmd = {0};
@@ -272,7 +271,7 @@ static void setup_attrib_reporting(void)
                 .reportable_change = &report_change,
             },
         };
-        report_cmd.record_number = ARRAY_LENTH(records);
+        report_cmd.record_number = ARRAY_LENGTH(records);
         report_cmd.record_field = records;
 
         esp_zb_lock_acquire(portMAX_DELAY);
@@ -836,37 +835,4 @@ static void blind_position_change_event_handler(void *arg, esp_event_base_t even
         ESP_LOGE(TAG, "Failed to set attribute value for endpoint %d: %d", endpoint_id, report_status);
         return;
     }
-
-    // // Explicitily send a Zigbee report after locally updating the attribute
-    // static esp_zb_zcl_report_attr_cmd_t *pending_report_cmd = NULL;
-    // pending_report_cmd = malloc(sizeof(esp_zb_zcl_report_attr_cmd_t));
-    // if (pending_report_cmd)
-    // {
-    //     *pending_report_cmd = (esp_zb_zcl_report_attr_cmd_t){
-    //         .address_mode = ESP_ZB_APS_ADDR_MODE_DST_ADDR_ENDP_NOT_PRESENT,
-    //         .zcl_basic_cmd = {
-    //             .src_endpoint = (uint8_t)endpoint_id,
-    //         },
-    //         .clusterID = ESP_ZB_ZCL_CLUSTER_ID_WINDOW_COVERING,
-    //         .attributeID = ESP_ZB_ZCL_ATTR_WINDOW_COVERING_CURRENT_POSITION_LIFT_PERCENTAGE_ID,
-    //     };
-    //     esp_zb_scheduler_alarm(zigbee_report_attr_cmd_cb, 0, 0);
-    // }
 }
-
-// /**
-//  * @brief Callback to safely send Zigbee report from Zigbee stack context.
-//  *
-//  * @param arg Unused parameter.
-//  */
-// static void zigbee_report_attr_cmd_cb(uint8_t arg)
-// {
-//     (void)arg; // Suppress unused warning
-//     extern esp_zb_zcl_report_attr_cmd_t *pending_report_cmd;
-//     if (pending_report_cmd)
-//     {
-//         esp_zb_zcl_report_attr_cmd_req(pending_report_cmd);
-//         free(pending_report_cmd);
-//         pending_report_cmd = NULL;
-//     }
-// }
