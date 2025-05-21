@@ -4,6 +4,9 @@
 *.map
 *.bin
 
+# Dev container files
+.devcontainer/
+
 # Object files
 *.o
 *.d
@@ -40,3 +43,6 @@ core
 managed_components/
 
 docs/*.bkp
+
+# Docs (because still working on it...)
+docs*/
